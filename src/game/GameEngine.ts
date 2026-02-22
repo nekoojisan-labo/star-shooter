@@ -157,14 +157,40 @@ export class GameEngine {
             if (e.touches.length > 0) {
                 const touch = e.touches[0];
                 const now = Date.now();
-                if (touch.clientY > this.height - 80) {
+                const btnSize = 60;
+                const margin = 10;
+
+                const cx = touch.clientX;
+                const cy = touch.clientY;
+
+                // Check if touched the Bomb button (bottom left, above gauge)
+                const bombX = margin;
+                const bombY = this.height - 30 - btnSize - margin; // 30 is gauge height approx
+                if (cx >= bombX && cx <= bombX + btnSize && cy >= bombY && cy <= bombY + btnSize) {
+                    if (this.player.bombCount > 0) {
+                        if (!this.keys['c']) this.keysPressed['c'] = true;
+                        this.keys['c'] = true;
+                    }
+                    return; // Handled button, don't move
+                }
+
+                // Check if touched the Powerup button (bottom right, above gauge)
+                const pwrX = this.width - margin - btnSize;
+                const pwrY = this.height - 30 - btnSize - margin;
+                if (cx >= pwrX && cx <= pwrX + btnSize && cy >= pwrY && cy <= pwrY + btnSize) {
+                    if (!this.keys['x']) this.keysPressed['x'] = true;
+                    this.keys['x'] = true;
+                    return; // Handled button, don't move
+                }
+
+                if (touch.clientY > this.height - 40) { // Tapped exactly on gauge area
                     if (!this.keys['x']) this.keysPressed['x'] = true;
                     this.keys['x'] = true;
                 } else {
                     this.touchActive = true;
                     this.prevTouchX = touch.clientX;
                     this.prevTouchY = touch.clientY;
-                    if (now - this.lastTapTime < 300) { // Double tap for bomb
+                    if (now - this.lastTapTime < 300) { // Double tap for bomb (legacy backup)
                         if (!this.keys['c']) this.keysPressed['c'] = true;
                         this.keys['c'] = true;
                     }
@@ -672,14 +698,58 @@ export class GameEngine {
                 this.ctx.fillText(`SUB: BIT Lv.${this.player.weapon.bitLevel}`, this.width - 10, subY);
             }
 
-            // Draw Gradius Powerup Gauge
-            const slotWidth = (this.width - 20) / POWERUP_SLOTS.length;
-            this.ctx.font = 'bold 12px "Courier New"';
+            // ---- Draw Mobile Virtual Buttons ----
+            const btnSize = 60;
+            const margin = 10;
+            const btnY = this.height - 30 - btnSize - margin; // placed above the gauge
+
+            // Bomb Button (Left)
+            const bombX = margin;
+            this.ctx.fillStyle = this.player.bombCount > 0 ? 'rgba(255, 50, 50, 0.5)' : 'rgba(100, 100, 100, 0.3)';
+            this.ctx.strokeStyle = this.player.bombCount > 0 ? '#FFAAAA' : '#888888';
+            this.ctx.lineWidth = 2;
+            this.ctx.beginPath();
+            this.ctx.roundRect(bombX, btnY, btnSize, btnSize, 10);
+            this.ctx.fill();
+            this.ctx.stroke();
+            this.ctx.fillStyle = '#FFFFFF';
+            this.ctx.font = 'bold 16px "Courier New"';
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
+            this.ctx.fillText("BOMB", bombX + btnSize / 2, btnY + btnSize / 2);
+
+            // Powerup Button (Right)
+            const pwrX = this.width - margin - btnSize;
+            this.ctx.fillStyle = this.powerupGauge > 0 ? 'rgba(50, 200, 255, 0.5)' : 'rgba(100, 100, 100, 0.3)';
+            this.ctx.strokeStyle = this.powerupGauge > 0 ? '#AAFFFF' : '#888888';
+            this.ctx.beginPath();
+            this.ctx.roundRect(pwrX, btnY, btnSize, btnSize, 10);
+            this.ctx.fill();
+            this.ctx.stroke();
+            this.ctx.fillStyle = '#FFFFFF';
+            this.ctx.fillText("PWR", pwrX + btnSize / 2, btnY + btnSize / 2);
+
+
+            // ---- Draw Gradius Powerup Gauge ----
+            // Adjust slot width logic for mobile screens so it fully fits
+            // Total available width is `this.width - 20`
+            // Instead of overflowing if width is narrow (e.g. 390px), we shrink the font size
+            const maxSlotWidth = 80;
+            let slotWidth = (this.width - 20) / POWERUP_SLOTS.length;
+            if (slotWidth > maxSlotWidth) slotWidth = maxSlotWidth;
+
+            // Center the gauge if the screen is very wide (e.g., standard PC)
+            const totalGaugeWidth = slotWidth * POWERUP_SLOTS.length;
+            const startX = (this.width - totalGaugeWidth) / 2;
+
+            // Reduce font size on small widths (smartphones < 400px width)
+            this.ctx.font = slotWidth < 50 ? 'bold 10px "Courier New"' : 'bold 12px "Courier New"';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+
             for (let i = 0; i < POWERUP_SLOTS.length; i++) {
                 const slot = POWERUP_SLOTS[i];
-                const x = 10 + i * slotWidth;
+                const x = startX + i * slotWidth;
                 const y = this.height - 20;
                 const isSelected = (this.powerupGauge - 1 === i);
 
@@ -689,8 +759,14 @@ export class GameEngine {
                 this.ctx.strokeStyle = isSelected ? '#FFFF00' : '#336699';
                 this.ctx.strokeRect(x + 1, y - 10, slotWidth - 2, 20);
 
+                // For very narrow slots, abbreviate or slice the name if needed
+                let displayName = slot.name;
+                if (slotWidth < 45 && displayName.length > 4) {
+                    displayName = displayName.slice(0, 3) + '.';
+                }
+
                 this.ctx.fillStyle = isSelected ? '#FFFFFF' : '#88AADD';
-                this.ctx.fillText(slot.name, x + slotWidth / 2, y);
+                this.ctx.fillText(displayName, x + slotWidth / 2, y);
             }
             this.ctx.textBaseline = 'alphabetic'; // reset
         }
