@@ -7,7 +7,7 @@ html {
   background-color: #000;
   overflow: hidden;
   font-family: 'Courier New', Courier, monospace;
-  /* レトロなフォント */
+  touch-action: none;
 }
 
 #root {

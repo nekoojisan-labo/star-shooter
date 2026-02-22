@@ -55,6 +55,14 @@ export class Player extends Entity {
         if (this.engine.keys['ArrowUp'] || this.engine.keys['w']) this.y -= this.speed * dt;
         if (this.engine.keys['ArrowDown'] || this.engine.keys['s']) this.y += this.speed * dt;
 
+        if (this.engine.touchActive) {
+            this.x += this.engine.touchDeltaX * 1.5;
+            this.y += this.engine.touchDeltaY * 1.5;
+            // Consume the deltas
+            this.engine.touchDeltaX = 0;
+            this.engine.touchDeltaY = 0;
+        }
+
         this.x = Math.max(0, Math.min(this.engine.width - this.width, this.x));
         this.y = Math.max(0, Math.min(this.engine.height - this.height - 40, this.y));
 
@@ -79,7 +87,7 @@ export class Player extends Entity {
 
         this.shotTimer -= dt;
         this.subShotTimer -= dt;
-        const isShooting = this.engine.keys['Space'] || this.engine.keys['z'] || this.engine.keys[' '];
+        const isShooting = this.engine.keys['Space'] || this.engine.keys['z'] || this.engine.keys[' '] || this.engine.touchActive;
         if (isShooting) {
             if (!this.engine.audioInitialized) {
                 audio.init();

@@ -69,6 +69,14 @@ export class GameEngine {
     bossActive: boolean = false;
     bombFlashTimer: number = 0;
 
+    // Touch Support
+    touchActive: boolean = false;
+    prevTouchX: number = 0;
+    prevTouchY: number = 0;
+    touchDeltaX: number = 0;
+    touchDeltaY: number = 0;
+    lastTapTime: number = 0;
+
     cleanup: () => void;
 
     async loadAssets() {
@@ -129,12 +137,76 @@ export class GameEngine {
             }
         };
         const handleKeyUp = (e: KeyboardEvent) => { this.keys[e.key] = false; };
+
+        const handleTouchStart = (e: TouchEvent) => {
+            if (e.cancelable) e.preventDefault();
+            if (!this.audioInitialized) {
+                audio.init();
+                this.audioInitialized = true;
+            }
+            if (this.gameState === GameState.Title || this.gameState === GameState.GameOver || this.gameState === GameState.StageClear) {
+                if (!this.keys['Enter']) this.keysPressed['Enter'] = true;
+                this.keys['Enter'] = true;
+                return;
+            }
+            if (this.gameState === GameState.Config) {
+                if (!this.keys['Enter']) this.keysPressed['Enter'] = true;
+                this.keys['Enter'] = true;
+                return;
+            }
+            if (e.touches.length > 0) {
+                const touch = e.touches[0];
+                const now = Date.now();
+                if (touch.clientY > this.height - 80) {
+                    if (!this.keys['x']) this.keysPressed['x'] = true;
+                    this.keys['x'] = true;
+                } else {
+                    this.touchActive = true;
+                    this.prevTouchX = touch.clientX;
+                    this.prevTouchY = touch.clientY;
+                    if (now - this.lastTapTime < 300) { // Double tap for bomb
+                        if (!this.keys['c']) this.keysPressed['c'] = true;
+                        this.keys['c'] = true;
+                    }
+                }
+                this.lastTapTime = now;
+            }
+        };
+
+        const handleTouchMove = (e: TouchEvent) => {
+            if (e.cancelable) e.preventDefault();
+            if (e.touches.length > 0 && this.touchActive) {
+                const cx = e.touches[0].clientX;
+                const cy = e.touches[0].clientY;
+                this.touchDeltaX += cx - this.prevTouchX;
+                this.touchDeltaY += cy - this.prevTouchY;
+                this.prevTouchX = cx;
+                this.prevTouchY = cy;
+            }
+        };
+
+        const handleTouchEnd = (e: TouchEvent) => {
+            if (e.cancelable) e.preventDefault();
+            if (e.touches.length === 0) {
+                this.touchActive = false;
+            }
+            this.keys['Enter'] = false;
+            this.keys['c'] = false;
+            this.keys['x'] = false;
+        };
+
         window.addEventListener('keydown', handleKeyDown);
         window.addEventListener('keyup', handleKeyUp);
+        window.addEventListener('touchstart', handleTouchStart, { passive: false });
+        window.addEventListener('touchmove', handleTouchMove, { passive: false });
+        window.addEventListener('touchend', handleTouchEnd, { passive: false });
 
         this.cleanup = () => {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
+            window.removeEventListener('touchstart', handleTouchStart);
+            window.removeEventListener('touchmove', handleTouchMove);
+            window.removeEventListener('touchend', handleTouchEnd);
             audio.stopBGM();
         };
     }
