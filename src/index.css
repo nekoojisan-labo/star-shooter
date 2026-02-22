@@ -3,7 +3,8 @@ html {
   margin: 0;
   padding: 0;
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
+  /* use dvh for mobile browsers like Safari */
   background-color: #000;
   overflow: hidden;
   font-family: 'Courier New', Courier, monospace;
