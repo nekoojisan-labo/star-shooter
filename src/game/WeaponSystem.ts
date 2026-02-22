@@ -24,6 +24,11 @@ export const POWERUP_SLOTS = [
 export class WeaponState {
     type: TWeaponType = WeaponType.Normal;
     level: number = 1; // 1 to 3
-    subType: TSubWeaponType = SubWeaponType.None;
-    subLevel: number = 1;
+
+    // Sub-weapons can now be combined
+    hasHoming: boolean = false;
+    homingLevel: number = 0; // 0 to 3
+
+    hasBits: boolean = false;
+    bitLevel: number = 0; // 0 to 3
 }

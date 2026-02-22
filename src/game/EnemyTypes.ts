@@ -1,5 +1,5 @@
 import { GameEngine, GameState } from './GameEngine';
-import { Enemy, Bullet, Particle } from './Entities';
+import { Enemy, Bullet, Particle, EnemyBullet } from './Entities';
 import { audio } from '../audio/AudioEngine';
 
 export const EnemyMotionType = {
@@ -184,20 +184,20 @@ export class PatternEnemy extends Enemy {
         const vx = (dx / dist) * speed;
         const vy = (dy / dist) * speed;
 
-        const bullet = new Bullet(this.engine, this.x + this.width / 2 - 4, this.y + this.height, vx, vy);
-        bullet.color = '#FFAA55'; // Enemy bullet color
-        // Add to enemy bullets (need to separate collision logic for enemy bullets!)
-        // Actually, we must add an `isEnemy` flag to Bullet to hurt player.
+        const bullet = new EnemyBullet(this.engine, this.x + this.width / 2 - 8, this.y + this.height, vx, vy);
+        bullet.color = '#FFAA55';
         this.engine.addEnemyBullet(bullet);
     }
 }
 
 export class Boss extends Enemy {
-    phases: BossPhase[] = [];
+    bossType: number;
+    phases: BossPhase[];
     currentPhase: number = 0;
+    dyingTimer: number = 0;
     timer: number = 0;
     lastFireTimer: number = -1;
-    bossType: number;
+    isMidBoss: boolean = false;
 
     constructor(engine: GameEngine, x: number, y: number, bossType: number) {
         super(engine, x, y);
@@ -206,26 +206,12 @@ export class Boss extends Enemy {
         this.height = 192;
         this.scoreValue = bossType * 5000;
 
-        switch (bossType) {
-            case 1:
-                this.phases = [{ hp: 50, update: this.boss1Phase1 }, { hp: 50, update: this.boss1Phase2 }];
-                break;
-            case 2:
-                this.phases = [{ hp: 100, update: this.boss2Phase1 }, { hp: 100, update: this.boss2Phase2 }];
-                break;
-            case 3:
-                this.phases = [{ hp: 150, update: this.boss3Phase1 }, { hp: 150, update: this.boss3Phase2 }];
-                break;
-            case 4:
-                this.phases = [{ hp: 200, update: this.boss4Phase1 }, { hp: 200, update: this.boss4Phase2 }];
-                break;
-            case 5:
-                this.phases = [{ hp: 300, update: this.boss5Phase1 }, { hp: 300, update: this.boss5Phase2 }, { hp: 500, update: this.boss5Phase3 }];
-                break;
-            default:
-                this.phases = [{ hp: 100, update: this.genericPhase }];
-                break;
-        }
+        const baseHp = bossType * 100;
+        this.phases = [
+            { hp: baseHp, update: this.genericPhase1 },
+            { hp: baseHp * 1.5, update: this.genericPhase2 },
+            { hp: baseHp * 2.5, update: this.genericPhase3 }
+        ];
 
         this.hp = this.phases[0].hp;
         this.speedY = 50;
@@ -235,6 +221,34 @@ export class Boss extends Enemy {
         this.x += this.speedX * dt;
         this.y += this.speedY * dt;
         this.timer += dt;
+
+        if (this.dyingTimer > 0) {
+            this.dyingTimer -= dt;
+            // Spawn explosions over its body during death sequence
+            if (Math.random() < 0.4) {
+                this.engine.addParticle(new Particle(this.engine, this.x + Math.random() * this.width, this.y + Math.random() * this.height));
+                if (this.engine.audioInitialized) {
+                    if (Math.random() > 0.5) audio.playExplosion();
+                    else audio.playEnemyDefeat();
+                }
+            }
+            if (this.dyingTimer <= 0) {
+                this.active = false;
+                this.engine.bossActive = false;
+                this.engine.addScore(this.scoreValue);
+                this.engine.enemyBullets = []; // clear danger
+                if (this.isMidBoss) {
+                    if (this.engine.audioInitialized) {
+                        audio.playExplosion();
+                        audio.playBGM(this.engine.stage); // Resume stage BGM
+                    }
+                } else {
+                    this.engine.gameState = GameState.StageClear;
+                    if (this.engine.audioInitialized) audio.playVictoryJingle();
+                }
+            }
+            return; // Skip normal AI update
+        }
 
         if (this.y > 50 && this.speedY > 0) {
             this.speedY = 0;
@@ -246,21 +260,16 @@ export class Boss extends Enemy {
     }
 
     hit(damage: number) {
+        if (this.dyingTimer > 0) return; // invincible while dying
         this.hp -= damage;
         if (this.hp <= 0) {
             this.currentPhase++;
             if (this.currentPhase >= this.phases.length) {
-                this.active = false;
-                this.engine.bossActive = false;
-                this.engine.addScore(this.scoreValue);
-                this.engine.enemyBullets = []; // clear danger
-                this.engine.gameState = GameState.StageClear;
+                this.dyingTimer = 3.0; // Start 3 second death sequence
                 if (this.engine.audioInitialized) audio.playExplosion();
-                for (let i = 0; i < 50; i++) {
-                    this.engine.addParticle(new Particle(this.engine, this.x + this.width / 2, this.y + this.height / 2));
-                }
             } else {
                 this.hp = this.phases[this.currentPhase].hp;
+                this.timer = 0; // reset phase timer
             }
         }
     }
@@ -276,92 +285,42 @@ export class Boss extends Enemy {
         }
     }
 
-    // Boss 1
-    boss1Phase1(boss: Boss, _dt: number) {
-        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 2) * 100;
-        if (boss.timer % 1.0 < 0.1) boss.fireAtPlayer(200);
-    }
-    boss1Phase2(boss: Boss, _dt: number) {
-        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 3) * 150;
-        if (boss.timer % 0.5 < 0.1) boss.fireAtPlayer(300);
+    genericPhase1(boss: Boss, _dt: number) {
+        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * (1 + boss.bossType * 0.2)) * 150;
+        if (boss.timer % (Math.max(0.2, 1.0 / boss.bossType)) < 0.1) {
+            boss.fireAtPlayer(200 + boss.bossType * 50);
+        }
     }
 
-    // Boss 2
-    boss2Phase1(boss: Boss, _dt: number) {
-        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer) * 150;
-        boss.y = 50 + Math.sin(boss.timer * 2) * 50;
-        if (boss.timer % 1.5 < 0.1) {
-            for (let i = 0; i < 5; i++) {
-                const angle = Math.PI / 2 + (i - 2) * 0.2;
+    genericPhase2(boss: Boss, dt: number) {
+        boss.x += (Math.random() - 0.5) * 300 * dt;
+        boss.x = Math.max(0, Math.min(boss.engine.width - boss.width, boss.x));
+        boss.y = 50 + Math.sin(boss.timer * 3) * 50;
+        if (boss.timer % (Math.max(0.3, 1.5 / boss.bossType)) < 0.1) {
+            for (let i = 0; i < 3 + boss.bossType; i++) {
+                const angle = Math.PI / 2 + (i - (1 + boss.bossType / 2)) * 0.2;
                 boss.fireAngle(angle, 250);
             }
         }
     }
-    boss2Phase2(boss: Boss, dt: number) {
-        boss.x += (Math.random() - 0.5) * 200 * dt;
-        boss.x = Math.max(0, Math.min(boss.engine.width - boss.width, boss.x));
-        if (boss.timer % 0.5 < 0.1) boss.fireAtPlayer(400);
-    }
 
-    // Boss 3
-    boss3Phase1(boss: Boss, _dt: number) {
-        if (boss.timer > 2.0) {
-            boss.x = Math.random() * (boss.engine.width - boss.width);
-            boss.y = Math.random() * 150;
-            boss.timer = 0;
-            for (let i = 0; i < 8; i++) boss.fireAngle(i * Math.PI / 4, 200);
-        }
-    }
-    boss3Phase2(boss: Boss, _dt: number) {
-        boss.speedY = 200 * Math.sin(boss.timer * 5);
-        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 2) * 100;
-        if (boss.timer % 0.2 < 0.05) boss.fireAtPlayer(350);
-    }
+    genericPhase3(boss: Boss, _dt: number) {
+        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.cos(boss.timer * 2) * 100;
+        boss.y = 50 + Math.abs(Math.sin(boss.timer * 4) * 80);
 
-    // Boss 4
-    boss4Phase1(boss: Boss, _dt: number) {
-        boss.x = (boss.engine.width / 2 - boss.width / 2);
-        if (boss.timer % 3.0 < 0.1) {
-            boss.engine.addEnemy(new PatternEnemy(boss.engine, boss.x, boss.y + boss.height, EnemyMotionType.Homing));
-            boss.engine.addEnemy(new PatternEnemy(boss.engine, boss.x + boss.width, boss.y + boss.height, EnemyMotionType.Homing));
+        if (boss.timer % (Math.max(0.1, 0.5 / boss.bossType)) < 0.1) {
+            for (let i = 0; i < 8 + boss.bossType * 2; i++) {
+                boss.fireAngle(boss.timer + i * (Math.PI * 2) / (8 + boss.bossType * 2), 200 + boss.bossType * 20);
+            }
         }
-    }
-    boss4Phase2(boss: Boss, dt: number) {
-        boss.x += Math.sin(boss.timer) * 100 * dt;
-        if (boss.timer % 1.0 < 0.1) {
-            for (let i = 0; i < 12; i++) boss.fireAngle(boss.timer + i * Math.PI / 6, 150);
-        }
-    }
-
-    // Boss 5 (Final)
-    boss5Phase1(boss: Boss, _dt: number) {
-        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.cos(boss.timer) * 120;
-        if (boss.timer % 0.3 < 0.1) {
-            boss.fireAngle(Math.PI / 2 + Math.sin(boss.timer * 5) * 0.5, 400);
-        }
-    }
-    boss5Phase2(boss: Boss, _dt: number) {
-        boss.y = 50 + Math.sin(boss.timer) * 40;
-        if (boss.timer % 0.5 < 0.1) {
-            for (let i = 0; i < 20; i++) boss.fireAngle(i * (Math.PI * 2) / 20, 200);
-        }
-    }
-    boss5Phase3(boss: Boss, _dt: number) {
-        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 4) * 150;
-        boss.y = 50 + Math.abs(Math.sin(boss.timer * 2) * 100);
-        boss.fireAngle(Math.random() * Math.PI * 2, 300);
-        if (Math.random() < 0.05) boss.fireAtPlayer(500);
-    }
-
-    genericPhase(boss: Boss, _dt: number) {
-        if (Math.random() < 0.05) boss.fireAtPlayer(200);
+        if (Math.random() < 0.05 + boss.bossType * 0.01) boss.fireAtPlayer(350);
     }
 
     fireAngle(angle: number, speed: number) {
         const vx = Math.cos(angle) * speed;
         const vy = Math.sin(angle) * speed;
-        const bullet = new Bullet(this.engine, this.x + this.width / 2, this.y + this.height / 2, vx, vy);
-        bullet.color = '#FF2222';
+        const bullet = new EnemyBullet(this.engine, this.x + this.width / 2 - 8, this.y + this.height / 2 - 8, vx, vy);
+        bullet.color = '#FF55FF';
         this.engine.addEnemyBullet(bullet);
     }
 
@@ -372,8 +331,8 @@ export class Boss extends Enemy {
         const vx = (dx / dist) * speed;
         const vy = (dy / dist) * speed;
 
-        const bullet = new Bullet(this.engine, this.x + this.width / 2, this.y + this.height, vx, vy);
-        bullet.color = '#FF0000';
+        const bullet = new EnemyBullet(this.engine, this.x + this.width / 2 - 8, this.y + this.height - 8, vx, vy);
+        bullet.color = '#FFAA55';
         this.engine.addEnemyBullet(bullet);
     }
 }

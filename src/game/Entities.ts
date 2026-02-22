@@ -1,7 +1,7 @@
+import { GameState } from './GameEngine';
 import type { GameEngine } from './GameEngine';
 import { audio } from '../audio/AudioEngine';
-import { WeaponType, WeaponState, POWERUP_SLOTS, SubWeaponType } from './WeaponSystem';
-import type { TWeaponType, TSubWeaponType } from './WeaponSystem';
+import { WeaponType, POWERUP_SLOTS, WeaponState } from './WeaponSystem';
 
 export class Entity {
     x: number;
@@ -33,6 +33,8 @@ export class Player extends Entity {
     speed: number = 300;
     shotTimer: number = 0;
     shotDelay: number = 0.12;
+    subShotTimer: number = 0;
+    subShotDelay: number = 1.2; // Homing delay increased
     weapon = new WeaponState();
     barrierHp: number = 0;
     invincibleTimer: number = 0;
@@ -56,33 +58,42 @@ export class Player extends Entity {
         this.x = Math.max(0, Math.min(this.engine.width - this.width, this.x));
         this.y = Math.max(0, Math.min(this.engine.height - this.height - 40, this.y));
 
-        if (this.engine.keysPressed['x'] || this.engine.keysPressed['X'] || this.engine.keysPressed['Enter']) {
-            if (this.engine.powerupGauge > 0) {
-                this.applyPowerup(this.engine.powerupGauge - 1);
-                this.engine.powerupGauge = 0;
+        if (this.engine.gameState === GameState.Playing) {
+            if (this.engine.keysPressed['x'] || this.engine.keysPressed['X'] || this.engine.keysPressed['Enter']) {
+                if (this.engine.powerupGauge > 0) {
+                    this.applyPowerup(this.engine.powerupGauge - 1);
+                    this.engine.powerupGauge = 0;
+                }
             }
-        }
 
-        // Bomb trigger
-        if (this.engine.keysPressed['c'] || this.engine.keysPressed['C']) {
-            if (this.bombCount > 0) {
-                this.engine.triggerBomb();
-                this.bombCount--;
+            // Bomb trigger
+            if (this.engine.keysPressed['c'] || this.engine.keysPressed['C']) {
+                if (this.bombCount > 0) {
+                    this.engine.triggerBomb();
+                    this.bombCount--;
+                }
             }
         }
 
         this.bits.forEach((b, i) => b.update(dt, i, this.bits.length));
 
         this.shotTimer -= dt;
+        this.subShotTimer -= dt;
         const isShooting = this.engine.keys['Space'] || this.engine.keys['z'] || this.engine.keys[' '];
-        if (isShooting && this.shotTimer <= 0) {
+        if (isShooting) {
             if (!this.engine.audioInitialized) {
                 audio.init();
                 audio.playBGM(this.engine.stage);
                 this.engine.audioInitialized = true;
             }
-            this.shotTimer = this.shotDelay;
-            this.shoot();
+            if (this.shotTimer <= 0) {
+                this.shotTimer = this.shotDelay;
+                this.shootMain();
+            }
+            if (this.subShotTimer <= 0) {
+                this.subShotTimer = this.subShotDelay;
+                this.shootSub();
+            }
         }
     }
 
@@ -102,33 +113,36 @@ export class Player extends Entity {
                 this.weapon.type = nextType;
                 this.weapon.level = 1;
             }
-        } else if (slot.name === "HOMING" || slot.name === "BIT") {
-            const nextType = slot.name === "HOMING" ? SubWeaponType.Homing : SubWeaponType.Bit;
-            if (this.weapon.subType === nextType) {
-                this.weapon.subLevel = Math.min(this.weapon.subLevel + 1, 3);
-            } else {
-                this.weapon.subType = nextType;
-                this.weapon.subLevel = 1;
-            }
-            if (nextType !== SubWeaponType.Bit) {
-                this.bits = [];
-            }
-        }
+        } else if (slot.name === "HOMING") {
+            this.weapon.hasHoming = true;
+            this.weapon.homingLevel = Math.min(this.weapon.homingLevel + 1, 3);
+        } else if (slot.name === "BIT") {
+            this.weapon.hasBits = true;
+            this.weapon.bitLevel = Math.min(this.weapon.bitLevel + 1, 5); // Max 5 bits
 
-        if (this.weapon.subType === SubWeaponType.Bit) {
-            const currentBits = this.bits.length;
-            const targetBits = this.weapon.subLevel * 2;
-            for (let i = currentBits; i < targetBits; i++) {
+            const targetBits = this.weapon.bitLevel; // 1 bit per level
+            while (this.bits.length < targetBits) {
                 this.bits.push(new BitEntity(this.engine, this));
             }
         }
     }
 
-    shoot() {
+    shootMain() {
         audio.playShot();
         const cx = this.x + this.width / 2;
         const cy = this.y;
 
+        this.createMainBullets(cx, cy);
+
+        // Bits also fire the main weapon output
+        if (this.weapon.hasBits) {
+            this.bits.forEach(bit => {
+                this.createMainBullets(bit.x + bit.width / 2, bit.y);
+            });
+        }
+    }
+
+    createMainBullets(cx: number, cy: number) {
         // Main Weapon
         switch (this.weapon.type) {
             case WeaponType.Normal:
@@ -149,7 +163,7 @@ export class Player extends Entity {
                 bLaser.width = laserWidth;
                 bLaser.height = 64;
                 bLaser.pierces = true;
-                bLaser.color = '#FFAAFF';
+                bLaser.color = '#FFAAFF'; // used as identifier for pink image
                 this.engine.addBullet(bLaser);
                 break;
             case WeaponType.Wide:
@@ -168,19 +182,19 @@ export class Player extends Entity {
                 }
                 break;
         }
+    }
 
+    shootSub() {
+        const cx = this.x + this.width / 2;
+        const cy = this.y;
         // Sub Weapon
-        if (this.weapon.subType === SubWeaponType.Homing) {
-            const count = this.weapon.subLevel * 2; // e.g., 2, 4, 6 missiles
+        if (this.weapon.hasHoming) {
+            const count = this.weapon.homingLevel * 2; // e.g., 2, 4, 6 missiles
             for (let i = 0; i < count; i++) {
                 const angle = (i - count / 2 + 0.5) * 0.4;
                 const hb = new HomingBullet(this.engine, cx - 6, cy + 20, Math.sin(angle) * 300, -300);
                 this.engine.addBullet(hb);
             }
-        } else if (this.weapon.subType === SubWeaponType.Bit) {
-            this.bits.forEach(bit => {
-                this.engine.addBullet(new Bullet(this.engine, bit.x + bit.width / 2 - 4, bit.y, 0, -500));
-            });
         }
     }
 
@@ -197,19 +211,34 @@ export class Player extends Entity {
         }
 
         if (this.barrierHp > 0) {
-            ctx.strokeStyle = '#00FFFF';
-            ctx.lineWidth = 2 + (this.barrierHp / 10) * 3;
+            const timePhase = Date.now() / 200;
+            const shieldRadius = Math.max(this.width, this.height) / 2 + 15;
+            const centerX = this.x + this.width / 2;
+            const centerY = this.y + this.height / 2;
+
+            ctx.save();
+            ctx.translate(centerX, centerY);
+
+            // Outer glowing aura
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#00FFFF';
+            ctx.strokeStyle = `rgba(0, 255, 255, ${0.7 + Math.sin(timePhase) * 0.3})`;
+            ctx.lineWidth = 3 + (this.barrierHp / 10) * 2;
+
             ctx.beginPath();
-            ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2 + 10, 0, Math.PI * 2);
+            ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
             ctx.stroke();
-            ctx.fillStyle = `rgba(0, 255, 255, ${Math.min(0.5, this.barrierHp * 0.05)})`;
+
+            // Inner translucent bubble
+            ctx.fillStyle = `rgba(0, 200, 255, ${0.15 + (this.barrierHp * 0.02)})`;
             ctx.fill();
+            ctx.restore();
 
             // Draw HP indicator for shield
             ctx.fillStyle = '#FFFFFF';
-            ctx.font = '12px "Courier New"';
+            ctx.font = 'bold 14px "Courier New"';
             ctx.textAlign = 'center';
-            ctx.fillText(this.barrierHp.toString(), this.x + this.width / 2, this.y - 10);
+            ctx.fillText(this.barrierHp.toString(), centerX, this.y - 15);
         }
 
         this.bits.forEach(b => b.draw(ctx));
@@ -234,8 +263,38 @@ export class Bullet extends Entity {
     }
 
     draw(ctx: CanvasRenderingContext2D) {
-        ctx.fillStyle = this.color;
-        ctx.fillRect(this.x, this.y, this.width, this.height);
+        if (this.color === '#FFAAFF' && this.engine.bulletPinkImage.complete) {
+            ctx.save();
+            ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.drawImage(this.engine.bulletPinkImage, -this.height / 2, -this.width / 2, this.height, this.width);
+            ctx.restore();
+        } else if (this.engine.bulletBlueImage.complete) {
+            ctx.drawImage(this.engine.bulletBlueImage, this.x, this.y, this.width, this.height);
+        } else {
+            ctx.fillStyle = this.color;
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+        }
+    }
+}
+
+export class EnemyBullet extends Bullet {
+    constructor(engine: GameEngine, x: number, y: number, speedX: number, speedY: number) {
+        super(engine, x, y, speedX, speedY);
+        this.width = 16;
+        this.height = 16;
+        this.pierces = false;
+    }
+
+    draw(ctx: CanvasRenderingContext2D) {
+        ctx.save();
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = this.color;
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
     }
 }
 
@@ -283,16 +342,26 @@ export class HomingBullet extends Bullet {
             const targetVX = (dx / dist) * speed;
             const targetVY = (dy / dist) * speed;
 
-            this.speedX += (targetVX - this.speedX) * 5 * dt;
-            this.speedY += (targetVY - this.speedY) * 5 * dt;
+            // Limit tracking strength (reduced from 5 to 1.5)
+            this.speedX += (targetVX - this.speedX) * 1.5 * dt;
+            this.speedY += (targetVY - this.speedY) * 1.5 * dt;
         }
     }
 
     draw(ctx: CanvasRenderingContext2D) {
-        ctx.fillStyle = this.color;
-        ctx.beginPath();
-        ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2);
-        ctx.fill();
+        if (this.engine.bulletOrangeImage.complete) {
+            const angle = Math.atan2(this.speedY, this.speedX) + Math.PI / 2; // +90 deg offset
+            ctx.save();
+            ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+            ctx.rotate(angle);
+            ctx.drawImage(this.engine.bulletOrangeImage, -this.width / 2, -this.height / 2, this.width, this.height);
+            ctx.restore();
+        } else {
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
     }
 }
 
@@ -353,11 +422,11 @@ export class Enemy extends Entity {
         if (this.hp <= 0) {
             this.active = false;
             this.engine.addScore(this.scoreValue);
-            if (this.engine.audioInitialized) audio.playExplosion();
+            if (this.engine.audioInitialized) audio.playEnemyDefeat();
             for (let i = 0; i < 15; i++) {
                 this.engine.addParticle(new Particle(this.engine, this.x + this.width / 2, this.y + this.height / 2));
             }
-            if (Math.random() < 0.1) {
+            if (Math.random() < 0.3) {
                 this.engine.powerups.push(new PowerUp(this.engine, this.x, this.y));
             }
         }

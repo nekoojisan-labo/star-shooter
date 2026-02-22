@@ -4,6 +4,7 @@ class AudioEngine {
     private sfxGainNode: GainNode | null = null;
     private bgmBuffers: { [key: string]: AudioBuffer } = {};
     private bgmSource: AudioBufferSourceNode | null = null;
+    private requestedBGM: string | null = null;
 
     // Default volumes (0.0 to 1.0)
     bgmVolume: number = Number(localStorage.getItem('bgmVolume') || 0.5);
@@ -18,7 +19,7 @@ class AudioEngine {
             this.bgmGainNode.connect(this.ctx.destination);
 
             this.sfxGainNode = this.ctx.createGain();
-            this.sfxGainNode.gain.value = this.sfxVolume;
+            this.sfxGainNode.gain.value = this.sfxVolume * 0.8;
             this.sfxGainNode.connect(this.ctx.destination);
 
             // プレロード
@@ -36,6 +37,9 @@ class AudioEngine {
             if (response.ok) {
                 const arrayBuffer = await response.arrayBuffer();
                 this.bgmBuffers[name] = await this.ctx.decodeAudioData(arrayBuffer);
+                if (this.requestedBGM === name || this.requestedBGM === `stage${name}` || name.includes(this.requestedBGM || '')) {
+                    this.playBGM(this.requestedBGM as string);
+                }
             }
         } catch (e) {
             console.error("Error loading BGM:", name, e);
@@ -54,7 +58,7 @@ class AudioEngine {
         this.sfxVolume = Math.max(0, Math.min(1, vol));
         localStorage.setItem('sfxVolume', this.sfxVolume.toString());
         if (this.sfxGainNode) {
-            this.sfxGainNode.gain.value = this.sfxVolume;
+            this.sfxGainNode.gain.value = this.sfxVolume * 0.8;
         }
     }
 
@@ -123,15 +127,37 @@ class AudioEngine {
         osc.stop(now + 0.3);
     }
 
+    // 敵撃破音
+    playEnemyDefeat() {
+        if (!this.ctx || !this.sfxGainNode) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'square';
+        osc.connect(gain);
+        gain.connect(this.sfxGainNode);
+
+        const now = this.ctx.currentTime;
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.exponentialRampToValueAtTime(40, now + 0.15);
+
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+
+        osc.start(now);
+        osc.stop(now + 0.15);
+    }
+
     // 用意したBGM(.wav)のループ再生
     playBGM(stage: number | string) {
         if (!this.ctx || !this.bgmGainNode) return;
         this.stopBGM();
 
         const name = typeof stage === 'number' ? `stage${stage}` : stage;
+        this.requestedBGM = name;
         const buffer = this.bgmBuffers[name] || this.bgmBuffers['stage1'];
 
-        if (!buffer) return; // まだロードされていなければ何もしない
+        if (!buffer) return; // まだロードされていなければ何もしない（ロード完了時に requestedBGM が一致すれば再生される）
 
         this.bgmSource = this.ctx.createBufferSource();
         this.bgmSource.buffer = buffer;
@@ -145,6 +171,32 @@ class AudioEngine {
         this.bgmSource.connect(this.bgmGainNode);
 
         this.bgmSource.start(0);
+    }
+
+    // ステージクリア時のファンファーレ
+    playVictoryJingle() {
+        if (!this.ctx || !this.bgmGainNode) return;
+        this.stopBGM(); // Stop current BGM
+        this.requestedBGM = 'victory';
+
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'square';
+        osc.connect(gain);
+        gain.connect(this.bgmGainNode); // Route to BGM line for volume matching
+
+        const now = this.ctx.currentTime;
+        osc.frequency.setValueAtTime(523.25, now);     // C5
+        osc.frequency.setValueAtTime(659.25, now + 0.15);// E5
+        osc.frequency.setValueAtTime(783.99, now + 0.3); // G5
+        osc.frequency.setValueAtTime(1046.50, now + 0.45);// C6
+
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.setValueAtTime(0.3, now + 0.45);
+        gain.gain.linearRampToValueAtTime(0, now + 2.0);
+
+        osc.start(now);
+        osc.stop(now + 2.0);
     }
 
     stopBGM() {

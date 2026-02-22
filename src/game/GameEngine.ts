@@ -1,8 +1,8 @@
 import { audio } from '../audio/AudioEngine';
 import { processSprite } from '../utils/ImageUtils';
-import { WeaponType, POWERUP_SLOTS } from './WeaponSystem';
+import { WeaponType, POWERUP_SLOTS, WeaponState } from './WeaponSystem';
 import { Entity, Player, Bullet, Enemy, PowerUp, Particle } from './Entities';
-import { PatternEnemy, Boss, type TEnemyMotionType } from './EnemyTypes';
+import { PatternEnemy, Boss, EnemyMotionType, type TEnemyMotionType } from './EnemyTypes';
 
 export const GameState = {
     Title: 0,
@@ -13,6 +13,14 @@ export const GameState = {
 } as const;
 export type GameState = typeof GameState[keyof typeof GameState];
 
+interface ParallaxStar {
+    x: number;
+    y: number;
+    speed: number;
+    size: number;
+    color: string;
+}
+
 export class GameEngine {
     ctx: CanvasRenderingContext2D;
     width: number;
@@ -20,12 +28,21 @@ export class GameEngine {
     keys: { [key: string]: boolean } = {};
     keysPressed: { [key: string]: boolean } = {}; // edge detection
     audioInitialized = false;
+    stageTimer: number = 0;
+    stageBossTime: number = 100;
+    midBossTime: number = 45;
+    midBossSpawned: boolean = false;
+
+    stars: ParallaxStar[] = [];
 
     // Assets
     playerImage = new Image();
     enemyImage = new Image();
     bossImage = new Image();
     bgImages: HTMLImageElement[] = [];
+    bulletBlueImage = new Image();
+    bulletPinkImage = new Image();
+    bulletOrangeImage = new Image();
 
     // State
     gameState: GameState = GameState.Title;
@@ -77,6 +94,10 @@ export class GameEngine {
             removeBg: true,
             rotate180: true
         });
+
+        this.bulletBlueImage = await processSprite({ src: '/assets/bullet_blue.png', removeBg: true });
+        this.bulletPinkImage = await processSprite({ src: '/assets/bullet_pink.png', removeBg: true });
+        this.bulletOrangeImage = await processSprite({ src: '/assets/bullet_orange.png', removeBg: true });
     }
 
     constructor(ctx: CanvasRenderingContext2D, width: number, height: number) {
@@ -87,6 +108,17 @@ export class GameEngine {
         this.loadAssets();
 
         this.player = new Player(this, width / 2 - 24, height - 100);
+
+        // Initialize stars
+        for (let i = 0; i < 100; i++) {
+            this.stars.push({
+                x: Math.random() * this.width,
+                y: Math.random() * this.height,
+                speed: Math.random() * 20 + 10,
+                size: Math.random() * 1.5 + 0.5,
+                color: `rgba(255, 255, 255, ${Math.random() * 0.8 + 0.2})`
+            });
+        }
 
         const handleKeyDown = (e: KeyboardEvent) => {
             if (!this.keys[e.key]) this.keysPressed[e.key] = true;
@@ -146,7 +178,11 @@ export class GameEngine {
     update(dt: number) {
         if (this.gameState === GameState.Title) {
             if (this.keysPressed['Enter'] || this.keysPressed[' ']) {
-                this.resetGame();
+                if (!this.audioInitialized) {
+                    audio.init();
+                    this.audioInitialized = true;
+                }
+                this.resetGame('new');
                 this.gameState = GameState.Playing;
             } else if (this.keysPressed['Shift']) {
                 this.gameState = GameState.Config;
@@ -193,7 +229,7 @@ export class GameEngine {
             if (this.keysPressed['Enter']) {
                 if (this.continues > 0) {
                     this.continues--;
-                    this.resetGame(true); // Continue
+                    this.resetGame('continue'); // Continue
                     this.gameState = GameState.Playing;
                 } else {
                     this.resetToTitle();
@@ -206,6 +242,11 @@ export class GameEngine {
         if (this.gameState === GameState.StageClear) {
             this.particles.forEach(p => p.update(dt));
             this.particles = this.particles.filter(p => p.active);
+
+            // Allow player bullets to continue flying off-screen!
+            this.bullets.forEach(b => b.update(dt));
+            this.bullets = this.bullets.filter(b => b.active);
+
             this.player.update(dt); // allow player to move during result
 
             if (this.keysPressed['Enter']) {
@@ -213,7 +254,7 @@ export class GameEngine {
                     this.resetToTitle();
                 } else {
                     this.stage++;
-                    this.resetGame(true);
+                    this.resetGame('nextStage');
                     this.gameState = GameState.Playing;
                 }
             }
@@ -223,6 +264,10 @@ export class GameEngine {
 
         if (this.bombFlashTimer > 0) {
             this.bombFlashTimer -= dt;
+        }
+
+        if (this.gameState === GameState.Playing && !this.bossActive) {
+            this.stageTimer += dt;
         }
 
         this.bgY += 50 * dt;
@@ -235,17 +280,68 @@ export class GameEngine {
             }
         }
 
+        // Update stars
+        for (const star of this.stars) {
+            star.y += star.speed * dt * (1 + this.stage * 0.2); // Faster stars in later stages
+            if (star.y > this.height) {
+                star.y = 0;
+                star.x = Math.random() * this.width;
+            }
+        }
+
         this.enemySpawnTimer -= dt;
         if (this.enemySpawnTimer <= 0 && !this.bossActive) {
-            this.enemySpawnTimer = Math.max(0.5, 1.5 - (this.stage * 0.15));
-            const x = Math.random() * (this.width - 40);
+            this.enemySpawnTimer = Math.max(0.6, 2.0 - (this.stage * 0.2));
 
-            // Random motion type from 0 to 19
-            const motionType = Math.floor(Math.random() * 20) as TEnemyMotionType;
-            this.addEnemy(new PatternEnemy(this, x, -50, motionType));
+            const rand = Math.random();
+            if (rand < 0.25) {
+                // V-Formation
+                const centerX = Math.random() * (this.width - 120) + 60;
+                this.addEnemy(new PatternEnemy(this, centerX, -50, EnemyMotionType.SineWave));
+                this.addEnemy(new PatternEnemy(this, centerX - 40, -80, EnemyMotionType.SineWave));
+                this.addEnemy(new PatternEnemy(this, centerX + 40, -80, EnemyMotionType.SineWave));
+            } else if (rand < 0.50) {
+                // Horizontal Line Formation
+                const startX = Math.random() * (this.width - 160) + 40;
+                this.addEnemy(new PatternEnemy(this, startX, -50, EnemyMotionType.Straight));
+                this.addEnemy(new PatternEnemy(this, startX + 40, -50, EnemyMotionType.Straight));
+                this.addEnemy(new PatternEnemy(this, startX + 80, -50, EnemyMotionType.Straight));
+            } else if (rand < 0.75) {
+                // Vertical Column Formation
+                const startX = Math.random() * (this.width - 40);
+                this.addEnemy(new PatternEnemy(this, startX, -50, EnemyMotionType.Homing));
+                this.addEnemy(new PatternEnemy(this, startX, -90, EnemyMotionType.Homing));
+                this.addEnemy(new PatternEnemy(this, startX, -130, EnemyMotionType.Homing));
+            } else {
+                // Single Spawn or Pair
+                const x = Math.random() * (this.width - 40);
+                const motionType = Math.floor(Math.random() * 20) as TEnemyMotionType;
+                this.addEnemy(new PatternEnemy(this, x, -50, motionType));
+                if (Math.random() > 0.5) {
+                    this.addEnemy(new PatternEnemy(this, this.width - x, -80, motionType));
+                }
+            }
+
+            // Mid boss trigger
+            if (this.stageTimer >= this.midBossTime && !this.midBossSpawned && !this.bossActive) {
+                this.bossActive = true;
+                this.midBossSpawned = true;
+
+                const midBoss = new Boss(this, this.width / 2 - 64, -150, Math.max(1, this.stage - 1));
+                midBoss.isMidBoss = true;
+                midBoss.scoreValue = 3000;
+                const baseHp = 150 * this.stage;
+                midBoss.phases = [
+                    { hp: baseHp, update: midBoss.genericPhase1 },
+                    { hp: baseHp * 1.5, update: midBoss.genericPhase2 }
+                ];
+                midBoss.hp = midBoss.phases[0].hp;
+                this.addEnemy(midBoss);
+            }
 
             // Stage boss trigger
-            if (this.score > this.stage * 5000 && !this.bossActive) {
+            // Wait slightly after stageBossTime to ensure the mid-boss is well clear if delayed
+            if (this.stageTimer >= this.stageBossTime && !this.bossActive && this.midBossSpawned) {
                 this.bossActive = true;
                 this.addEnemy(new Boss(this, this.width / 2 - 64, -150, this.stage));
             }
@@ -275,7 +371,9 @@ export class GameEngine {
         for (const b of this.bullets) {
             for (const e of this.enemies) {
                 if (b.active && e.active && this.isAABB(b, e)) {
-                    b.active = false;
+                    if (!b.pierces) {
+                        b.active = false;
+                    }
                     e.hit(1);
                 }
             }
@@ -285,11 +383,28 @@ export class GameEngine {
         for (const e of this.enemies) {
             if (e.active && this.isAABB(this.player, e)) {
                 e.hit(100);
+                if (this.gameState === GameState.StageClear) return; // Prevent double-KO game over when hitting boss
+
                 if (this.player.barrierHp > 0) {
                     this.player.barrierHp--;
                     if (this.audioInitialized) audio.playExplosion();
                 } else {
                     this.playerHit();
+                }
+            }
+        }
+
+        // Enemy bullet hits Player Bits (Bits block bullets)
+        for (const b of this.enemyBullets) {
+            if (!b.active) continue;
+            for (const bit of this.player.bits) {
+                const dx = (bit.x + bit.width / 2) - (b.x + b.width / 2);
+                const dy = (bit.y + bit.height / 2) - (b.y + b.height / 2);
+                // 18 is the combined radii of bit (width 20 -> r 10) and EnemyBullet (width 16 -> r 8)
+                if (dx * dx + dy * dy < 18 * 18) {
+                    b.active = false;
+                    for (let i = 0; i < 3; i++) this.addParticle(new Particle(this, b.x + b.width / 2, b.y + b.height / 2));
+                    break;
                 }
             }
         }
@@ -328,7 +443,9 @@ export class GameEngine {
         }
 
         this.lives -= 1;
-        this.player.weapon.level = 1;
+        this.player.weapon = new WeaponState();
+        this.player.bits = [];
+        this.player.barrierHp = 0;
 
         if (this.lives <= 0) {
             this.gameState = GameState.GameOver;
@@ -344,25 +461,40 @@ export class GameEngine {
     resetToTitle() {
         this.gameState = GameState.Title;
         this.continues = 2;
-        this.resetGame();
+        this.resetGame('new');
     }
 
-    resetGame(isContinue: boolean = false) {
-        if (isContinue) {
-            this.score = 0; // Or retain half score, but reset to 0 is standard for continue
+    resetGame(resetType: 'new' | 'continue' | 'nextStage' = 'new') {
+        if (resetType === 'continue') {
+            this.score = 0;
             this.nextExtendScore = 20000;
-        } else {
+            this.lives = 3;
+            this.stageTimer = 0;
+            this.midBossSpawned = false;
+        } else if (resetType === 'new') {
             this.score = 0;
             this.stage = 1;
             this.nextExtendScore = 20000;
             this.continues = 2;
+            this.lives = 3;
+            this.stageTimer = 0;
+            this.midBossSpawned = false;
+        } else if (resetType === 'nextStage') {
+            this.stageTimer = 0;
+            this.midBossSpawned = false;
         }
 
-        this.lives = 3;
         this.player.x = this.width / 2 - 24;
         this.player.y = this.height - 100;
-        this.player.weapon.level = 1;
-        this.player.invincibleTimer = 0;
+        this.player.invincibleTimer = 3.0;
+
+        if (resetType !== 'nextStage') {
+            this.player.weapon = new WeaponState();
+            this.player.bits = [];
+            this.player.barrierHp = 0;
+            this.player.bombCount = 2;
+        }
+
         this.powerupGauge = 0;
         this.enemies = [];
         this.bullets = [];
@@ -392,12 +524,38 @@ export class GameEngine {
                 drawY += scaledHeight;
             }
 
+            // Draw Parallax Stars
+            for (const star of this.stars) {
+                this.ctx.fillStyle = star.color;
+                this.ctx.beginPath();
+                this.ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+
+            // Draw Dynamic Nebula
+            const nebulaY = (this.bgY * 0.5) % this.height;
+            const nebulaGradient = this.ctx.createRadialGradient(this.width / 2 + Math.sin(this.bgY * 0.01) * 100, nebulaY, 0, this.width / 2, nebulaY, 400);
+
+            const hue = (this.stage * 60 + this.bgY * 0.05) % 360;
+            nebulaGradient.addColorStop(0, `hsla(${hue}, 70%, 50%, 0.15)`);
+            nebulaGradient.addColorStop(1, 'rgba(0,0,0,0)');
+            this.ctx.fillStyle = nebulaGradient;
+            this.ctx.fillRect(0, 0, this.width, this.height);
+
             // 背景上に暗いオーバーレイを重ねてキャラクターの視認性を上げる
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
             this.ctx.fillRect(0, 0, this.width, this.height);
         } else {
             this.ctx.fillStyle = '#050510';
             this.ctx.fillRect(0, 0, this.width, this.height);
+
+            // Draw Parallax Stars even without bg
+            for (const star of this.stars) {
+                this.ctx.fillStyle = star.color;
+                this.ctx.beginPath();
+                this.ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
         }
 
         this.powerups.forEach(p => p.draw(this.ctx));
@@ -431,10 +589,15 @@ export class GameEngine {
                 const weaponName = Object.keys(WeaponType).find(k => (WeaponType as any)[k] === this.player.weapon.type)?.toUpperCase() || "WEAPON";
                 this.ctx.fillText(`MAIN: ${weaponName} Lv.${this.player.weapon.level}`, this.width - 10, 60);
             }
-            if (this.player.weapon.subType !== 0) { // SubWeaponType.None is 0
+            let subY = 90;
+            if (this.player.weapon.hasHoming) {
                 this.ctx.fillStyle = '#FFAA00';
-                let subName = this.player.weapon.subType === 1 ? 'HOMING' : 'BIT';
-                this.ctx.fillText(`SUB: ${subName} Lv.${this.player.weapon.subLevel}`, this.width - 10, 90);
+                this.ctx.fillText(`SUB: HOMING Lv.${this.player.weapon.homingLevel}`, this.width - 10, subY);
+                subY += 30;
+            }
+            if (this.player.weapon.hasBits) {
+                this.ctx.fillStyle = '#00FFAA';
+                this.ctx.fillText(`SUB: BIT Lv.${this.player.weapon.bitLevel}`, this.width - 10, subY);
             }
 
             // Draw Gradius Powerup Gauge
