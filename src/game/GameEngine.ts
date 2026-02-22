@@ -29,6 +29,7 @@ export class GameEngine {
     keysPressed: { [key: string]: boolean } = {}; // edge detection
     audioInitialized = false;
     stageTimer: number = 0;
+    gameTimer: number = 0; // Continuous timer for animations like Bits
     stageBossTime: number = 100;
     midBossTime: number = 45;
     midBossSpawned: boolean = false;
@@ -372,8 +373,11 @@ export class GameEngine {
             this.bombFlashTimer -= dt;
         }
 
-        if (this.gameState === GameState.Playing && !this.bossActive) {
-            this.stageTimer += dt;
+        if (this.gameState === GameState.Playing) {
+            this.gameTimer += dt;
+            if (!this.bossActive) {
+                this.stageTimer += dt;
+            }
         }
 
         this.bgY += 50 * dt;
@@ -576,6 +580,7 @@ export class GameEngine {
             this.nextExtendScore = 20000;
             this.lives = 3;
             this.stageTimer = 0;
+            this.gameTimer = 0;
             this.midBossSpawned = false;
         } else if (resetType === 'new') {
             this.score = 0;
@@ -584,9 +589,11 @@ export class GameEngine {
             this.continues = 2;
             this.lives = 3;
             this.stageTimer = 0;
+            this.gameTimer = 0;
             this.midBossSpawned = false;
         } else if (resetType === 'nextStage') {
             this.stageTimer = 0;
+            // Note: gameTimer keeps running across stages
             this.midBossSpawned = false;
         }
 

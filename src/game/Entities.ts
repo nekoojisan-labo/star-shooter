@@ -388,7 +388,7 @@ export class BitEntity extends Entity {
         if (index === undefined || total === undefined) return;
 
         // Base angle off a global timer so all bits sync perfectly visually
-        this.angle = this.engine.stageTimer * 3; // Global orbit speed
+        this.angle = this.engine.gameTimer * 3; // Global orbit speed
 
         const orbitRadius = 60;
         const offsetAngle = this.angle + (Math.PI * 2 * index) / total;
