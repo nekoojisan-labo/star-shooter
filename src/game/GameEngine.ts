@@ -77,6 +77,9 @@ export class GameEngine {
     touchDeltaY: number = 0;
     lastTapTime: number = 0;
 
+    // Mobile detection
+    isMobile: boolean = false;
+
     cleanup: () => void;
 
     async loadAssets() {
@@ -140,6 +143,7 @@ export class GameEngine {
 
         const handleTouchStart = (e: TouchEvent) => {
             if (e.cancelable) e.preventDefault();
+            this.isMobile = true; // Detect mobile on first touch
             if (!this.audioInitialized) {
                 audio.init();
                 this.audioInitialized = true;
@@ -157,16 +161,20 @@ export class GameEngine {
             if (e.touches.length > 0) {
                 const touch = e.touches[0];
                 const now = Date.now();
-                const btnSize = 60;
-                const margin = 10;
+
+                // Mobile button layout
+                const btnSize = 80;
+                const margin = 12;
+                const gaugeHeight = 36;
+                const gaugePadding = 8;
+                const btnY = this.height - gaugeHeight - gaugePadding - btnSize - margin;
 
                 const cx = touch.clientX;
                 const cy = touch.clientY;
 
                 // Check if touched the Bomb button (bottom left, above gauge)
                 const bombX = margin;
-                const bombY = this.height - 30 - btnSize - margin; // 30 is gauge height approx
-                if (cx >= bombX && cx <= bombX + btnSize && cy >= bombY && cy <= bombY + btnSize) {
+                if (cx >= bombX && cx <= bombX + btnSize && cy >= btnY && cy <= btnY + btnSize) {
                     if (this.player.bombCount > 0) {
                         if (!this.keys['c']) this.keysPressed['c'] = true;
                         this.keys['c'] = true;
@@ -176,14 +184,14 @@ export class GameEngine {
 
                 // Check if touched the Powerup button (bottom right, above gauge)
                 const pwrX = this.width - margin - btnSize;
-                const pwrY = this.height - 30 - btnSize - margin;
-                if (cx >= pwrX && cx <= pwrX + btnSize && cy >= pwrY && cy <= pwrY + btnSize) {
+                if (cx >= pwrX && cx <= pwrX + btnSize && cy >= btnY && cy <= btnY + btnSize) {
                     if (!this.keys['x']) this.keysPressed['x'] = true;
                     this.keys['x'] = true;
                     return; // Handled button, don't move
                 }
 
-                if (touch.clientY > this.height - 40) { // Tapped exactly on gauge area
+                // Tapped on gauge area
+                if (touch.clientY > this.height - gaugeHeight - gaugePadding) {
                     if (!this.keys['x']) this.keysPressed['x'] = true;
                     this.keys['x'] = true;
                 } else {
@@ -687,68 +695,101 @@ export class GameEngine {
             //     // ...
             // }
 
-            // ---- Draw Mobile Virtual Buttons ----
-            const btnSize = 60;
-            const margin = 10;
-            const btnY = this.height - 30 - btnSize - margin; // placed above the gauge
+            // ---- Draw Mobile Virtual Buttons (mobile only) ----
+            if (this.isMobile) {
+                const btnSize = 80;
+                const margin = 12;
+                const gaugeHeight = 36;
+                const gaugePadding = 8;
+                const btnY = this.height - gaugeHeight - gaugePadding - btnSize - margin;
 
-            // Bomb Button (Left)
-            const bombX = margin;
-            this.ctx.fillStyle = this.player.bombCount > 0 ? 'rgba(255, 50, 50, 0.5)' : 'rgba(100, 100, 100, 0.3)';
-            this.ctx.strokeStyle = this.player.bombCount > 0 ? '#FFAAAA' : '#888888';
-            this.ctx.lineWidth = 2;
-            this.ctx.beginPath();
-            this.ctx.roundRect(bombX, btnY, btnSize, btnSize, 10);
-            this.ctx.fill();
-            this.ctx.stroke();
-            this.ctx.fillStyle = '#FFFFFF';
-            this.ctx.font = 'bold 16px "Courier New"';
-            this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'middle';
-            this.ctx.fillText("BOMB", bombX + btnSize / 2, btnY + btnSize / 2);
+                // Bomb Button (Left)
+                const bombX = margin;
+                const hasBombs = this.player.bombCount > 0;
+                this.ctx.save();
+                if (hasBombs) {
+                    this.ctx.shadowBlur = 12;
+                    this.ctx.shadowColor = 'rgba(255, 80, 50, 0.8)';
+                }
+                this.ctx.fillStyle = hasBombs ? 'rgba(255, 50, 30, 0.6)' : 'rgba(80, 80, 80, 0.4)';
+                this.ctx.strokeStyle = hasBombs ? '#FF8866' : '#666666';
+                this.ctx.lineWidth = 3;
+                this.ctx.beginPath();
+                this.ctx.roundRect(bombX, btnY, btnSize, btnSize, 14);
+                this.ctx.fill();
+                this.ctx.stroke();
+                this.ctx.restore();
+                // Bomb icon & label
+                this.ctx.fillStyle = hasBombs ? '#FFFFFF' : '#999999';
+                this.ctx.font = 'bold 28px "Courier New"';
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                this.ctx.fillText('\u{1F4A3}', bombX + btnSize / 2, btnY + btnSize / 2 - 8);
+                this.ctx.font = 'bold 12px "Courier New"';
+                this.ctx.fillText(`BOMB x${this.player.bombCount}`, bombX + btnSize / 2, btnY + btnSize - 12);
 
-            // Powerup Button (Right)
-            const pwrX = this.width - margin - btnSize;
-            this.ctx.fillStyle = this.powerupGauge > 0 ? 'rgba(50, 200, 255, 0.5)' : 'rgba(100, 100, 100, 0.3)';
-            this.ctx.strokeStyle = this.powerupGauge > 0 ? '#AAFFFF' : '#888888';
-            this.ctx.beginPath();
-            this.ctx.roundRect(pwrX, btnY, btnSize, btnSize, 10);
-            this.ctx.fill();
-            this.ctx.stroke();
-            this.ctx.fillStyle = '#FFFFFF';
-            this.ctx.fillText("PWR", pwrX + btnSize / 2, btnY + btnSize / 2);
-
+                // Powerup Button (Right)
+                const pwrX = this.width - margin - btnSize;
+                const hasPwr = this.powerupGauge > 0;
+                this.ctx.save();
+                if (hasPwr) {
+                    this.ctx.shadowBlur = 12;
+                    this.ctx.shadowColor = 'rgba(50, 200, 255, 0.8)';
+                }
+                this.ctx.fillStyle = hasPwr ? 'rgba(30, 150, 255, 0.6)' : 'rgba(80, 80, 80, 0.4)';
+                this.ctx.strokeStyle = hasPwr ? '#66DDFF' : '#666666';
+                this.ctx.lineWidth = 3;
+                this.ctx.beginPath();
+                this.ctx.roundRect(pwrX, btnY, btnSize, btnSize, 14);
+                this.ctx.fill();
+                this.ctx.stroke();
+                this.ctx.restore();
+                // PWR icon & label
+                this.ctx.fillStyle = hasPwr ? '#FFFFFF' : '#999999';
+                this.ctx.font = 'bold 28px "Courier New"';
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                this.ctx.fillText('\u26A1', pwrX + btnSize / 2, btnY + btnSize / 2 - 8);
+                this.ctx.font = 'bold 12px "Courier New"';
+                const pwrLabel = hasPwr ? POWERUP_SLOTS[this.powerupGauge - 1].name : 'PWR UP';
+                this.ctx.fillText(pwrLabel, pwrX + btnSize / 2, btnY + btnSize - 12);
+            }
 
             // ---- Draw Gradius Powerup Gauge ----
-            // Adjust slot width logic for mobile screens so it fully fits
-            // Total available width is `this.width - 20`
-            // Instead of overflowing if width is narrow (e.g. 390px), we shrink the font size
+            const gaugeBottomMargin = this.isMobile ? 8 : 0;
+            const gaugeSlotHeight = this.isMobile ? 30 : 20;
             const maxSlotWidth = 80;
             let slotWidth = (this.width - 20) / POWERUP_SLOTS.length;
             if (slotWidth > maxSlotWidth) slotWidth = maxSlotWidth;
 
-            // Center the gauge if the screen is very wide (e.g., standard PC)
             const totalGaugeWidth = slotWidth * POWERUP_SLOTS.length;
             const startX = (this.width - totalGaugeWidth) / 2;
 
-            // Reduce font size on small widths (smartphones < 400px width)
-            this.ctx.font = slotWidth < 50 ? 'bold 10px "Courier New"' : 'bold 12px "Courier New"';
+            const gaugeFontSize = this.isMobile
+                ? (slotWidth < 50 ? 12 : 14)
+                : (slotWidth < 50 ? 10 : 12);
+            this.ctx.font = `bold ${gaugeFontSize}px "Courier New"`;
             this.ctx.textAlign = 'center';
             this.ctx.textBaseline = 'middle';
 
             for (let i = 0; i < POWERUP_SLOTS.length; i++) {
                 const slot = POWERUP_SLOTS[i];
                 const x = startX + i * slotWidth;
-                const y = this.height - 20;
+                const y = this.height - gaugeSlotHeight / 2 - gaugeBottomMargin;
                 const isSelected = (this.powerupGauge - 1 === i);
 
-                this.ctx.fillStyle = isSelected ? '#FF4400' : '#112244';
-                this.ctx.fillRect(x + 1, y - 10, slotWidth - 2, 20);
+                // Background with better contrast on mobile
+                if (this.isMobile) {
+                    this.ctx.fillStyle = isSelected ? '#FF4400' : 'rgba(10, 20, 50, 0.85)';
+                } else {
+                    this.ctx.fillStyle = isSelected ? '#FF4400' : '#112244';
+                }
+                this.ctx.fillRect(x + 1, y - gaugeSlotHeight / 2, slotWidth - 2, gaugeSlotHeight);
 
                 this.ctx.strokeStyle = isSelected ? '#FFFF00' : '#336699';
-                this.ctx.strokeRect(x + 1, y - 10, slotWidth - 2, 20);
+                this.ctx.lineWidth = this.isMobile ? 2 : 1;
+                this.ctx.strokeRect(x + 1, y - gaugeSlotHeight / 2, slotWidth - 2, gaugeSlotHeight);
 
-                // For very narrow slots, abbreviate or slice the name if needed
                 let displayName = slot.name;
                 if (slotWidth < 45 && displayName.length > 4) {
                     displayName = displayName.slice(0, 3) + '.';
