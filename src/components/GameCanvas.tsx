@@ -12,22 +12,37 @@ const GameCanvas: React.FC = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // Use visualViewport on mobile to exclude browser chrome (address bar, etc.)
+    const getViewportSize = () => {
+      const vv = window.visualViewport;
+      if (vv) {
+        return { width: vv.width, height: vv.height };
+      }
+      return { width: window.innerWidth, height: window.innerHeight };
+    };
+
     const resizeCanvas = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      const { width, height } = getViewportSize();
+      canvas.width = width;
+      canvas.height = height;
       if (engineRef.current) {
-        engineRef.current.resize(window.innerWidth, window.innerHeight);
+        engineRef.current.resize(width, height);
       }
     };
 
     // Initial size
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    const initialSize = getViewportSize();
+    canvas.width = initialSize.width;
+    canvas.height = initialSize.height;
 
-    const engine = new GameEngine(ctx, window.innerWidth, window.innerHeight);
+    const engine = new GameEngine(ctx, initialSize.width, initialSize.height);
     engineRef.current = engine;
 
     window.addEventListener('resize', resizeCanvas);
+    // visualViewport fires its own resize event when browser chrome toggles
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', resizeCanvas);
+    }
 
     let animationFrameId: number;
     let lastTime = performance.now();
@@ -49,6 +64,9 @@ const GameCanvas: React.FC = () => {
     return () => {
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', resizeCanvas);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', resizeCanvas);
+      }
       engine.cleanup();
     };
   }, []);

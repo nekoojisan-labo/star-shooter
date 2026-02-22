@@ -65,7 +65,7 @@ export class Player extends Entity {
 
         this.x = Math.max(0, Math.min(this.engine.width - this.width, this.x));
         // On mobile, keep player above the larger button/gauge area
-        const bottomUIMargin = this.engine.isMobile ? 140 : 40;
+        const bottomUIMargin = this.engine.isMobile ? 155 : 40;
         this.y = Math.max(0, Math.min(this.engine.height - this.height - bottomUIMargin, this.y));
 
         if (this.engine.gameState === GameState.Playing) {
