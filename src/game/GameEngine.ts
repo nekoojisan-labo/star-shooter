@@ -74,30 +74,30 @@ export class GameEngine {
     async loadAssets() {
         for (let i = 1; i <= 3; i++) {
             this.bgImages[i] = await processSprite({
-                src: `/assets/bg_stage${i}.png`,
+                src: `${import.meta.env.BASE_URL}assets/bg_stage${i}.png`,
             });
         }
         this.bgImages[0] = this.bgImages[1]; // fallback
 
         this.playerImage = await processSprite({
-            src: '/assets/player.png',
+            src: `${import.meta.env.BASE_URL}assets/player.png`,
             crop: { x: 0.2, y: 0.2, w: 0.6, h: 0.6 },
             removeBg: true
         });
         this.enemyImage = await processSprite({
-            src: '/assets/enemies.png',
+            src: `${import.meta.env.BASE_URL}assets/enemies.png`,
             removeBg: true
         });
         this.bossImage = await processSprite({
-            src: '/assets/boss.png',
+            src: `${import.meta.env.BASE_URL}assets/boss.png`,
             crop: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
             removeBg: true,
             rotate180: true
         });
 
-        this.bulletBlueImage = await processSprite({ src: '/assets/bullet_blue.png', removeBg: true });
-        this.bulletPinkImage = await processSprite({ src: '/assets/bullet_pink.png', removeBg: true });
-        this.bulletOrangeImage = await processSprite({ src: '/assets/bullet_orange.png', removeBg: true });
+        this.bulletBlueImage = await processSprite({ src: `${import.meta.env.BASE_URL}assets/bullet_blue.png`, removeBg: true });
+        this.bulletPinkImage = await processSprite({ src: `${import.meta.env.BASE_URL}assets/bullet_pink.png`, removeBg: true });
+        this.bulletOrangeImage = await processSprite({ src: `${import.meta.env.BASE_URL}assets/bullet_orange.png`, removeBg: true });
     }
 
     constructor(ctx: CanvasRenderingContext2D, width: number, height: number) {

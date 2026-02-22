@@ -33,7 +33,7 @@ class AudioEngine {
     async loadBGM(name: string) {
         if (!this.ctx) return;
         try {
-            const response = await fetch(`/assets/${name}.wav`);
+            const response = await fetch(`${import.meta.env.BASE_URL}assets/${name}.wav`);
             if (response.ok) {
                 const arrayBuffer = await response.arrayBuffer();
                 this.bgmBuffers[name] = await this.ctx.decodeAudioData(arrayBuffer);
