@@ -1,6 +1,6 @@
 import { audio } from '../audio/AudioEngine';
 import { processSprite } from '../utils/ImageUtils';
-import { WeaponType, POWERUP_SLOTS, WeaponState } from './WeaponSystem';
+import { POWERUP_SLOTS, WeaponState } from './WeaponSystem';
 import { Entity, Player, Bullet, Enemy, PowerUp, Particle } from './Entities';
 import { PatternEnemy, Boss, EnemyMotionType, type TEnemyMotionType } from './EnemyTypes';
 
@@ -682,21 +682,10 @@ export class GameEngine {
             this.ctx.textAlign = 'right';
             this.ctx.fillText(`STAGE: ${this.stage}`, this.width - 10, 30);
 
-            if (this.player.weapon.level > 1 || this.player.weapon.type !== WeaponType.Normal) {
-                this.ctx.fillStyle = '#00FFFF';
-                const weaponName = Object.keys(WeaponType).find(k => (WeaponType as any)[k] === this.player.weapon.type)?.toUpperCase() || "WEAPON";
-                this.ctx.fillText(`MAIN: ${weaponName} Lv.${this.player.weapon.level}`, this.width - 10, 60);
-            }
-            let subY = 90;
-            if (this.player.weapon.hasHoming) {
-                this.ctx.fillStyle = '#FFAA00';
-                this.ctx.fillText(`SUB: HOMING Lv.${this.player.weapon.homingLevel}`, this.width - 10, subY);
-                subY += 30;
-            }
-            if (this.player.weapon.hasBits) {
-                this.ctx.fillStyle = '#00FFAA';
-                this.ctx.fillText(`SUB: BIT Lv.${this.player.weapon.bitLevel}`, this.width - 10, subY);
-            }
+            // Detailed Weapon stats removed as per user request
+            // if (this.player.weapon.level > 1 || this.player.weapon.type !== WeaponType.Normal) {
+            //     // ...
+            // }
 
             // ---- Draw Mobile Virtual Buttons ----
             const btnSize = 60;

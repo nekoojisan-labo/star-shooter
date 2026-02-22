@@ -276,11 +276,18 @@ export class Boss extends Enemy {
 
     draw(ctx: CanvasRenderingContext2D) {
         if (this.engine.bossImage.complete && this.engine.bossImage.naturalWidth > 0) {
+            ctx.save();
             ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+
+            // Apply a color shift for the Mid-Boss to distinguish it from the Stage Boss
+            if (this.isMidBoss) {
+                ctx.filter = 'hue-rotate(120deg) brightness(1.2)';
+            }
+
             ctx.drawImage(this.engine.bossImage, -this.width / 2, -this.height / 2, this.width, this.height);
-            ctx.translate(-(this.x + this.width / 2), -(this.y + this.height / 2));
+            ctx.restore();
         } else {
-            ctx.fillStyle = '#FF0000';
+            ctx.fillStyle = this.isMidBoss ? '#00FFFF' : '#FF0000';
             ctx.fillRect(this.x, this.y, this.width, this.height);
         }
     }
