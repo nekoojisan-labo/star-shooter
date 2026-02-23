@@ -214,6 +214,7 @@ export class Boss extends Enemy {
     timer: number = 0;
     lastFireTimer: number = -1;
     isMidBoss: boolean = false;
+    introComplete: boolean = false; // once true, no re-entry guard
     startX: number = 0;
     startY: number = 0;
     phaseTimer: number = 0;
@@ -385,10 +386,13 @@ export class Boss extends Enemy {
             return;
         }
 
-        // Intro movement
-        if (this.y < this.startY) {
-            this.y += this.speedY * dt;
-            return;
+        // Intro movement — only runs until boss first reaches startY
+        if (!this.introComplete) {
+            if (this.y < this.startY) {
+                this.y += this.speedY * dt;
+                return;
+            }
+            this.introComplete = true; // lock: never re-trigger intro
         }
 
         this.timer += dt;
@@ -449,6 +453,11 @@ export class Boss extends Enemy {
         if (img && img.complete && img.naturalWidth > 0) {
             ctx.save();
             ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+
+            // Stage 4 boss image is oriented left — rotate -90° to face down
+            if (this.bossType === 4 && !this.isMidBoss) {
+                ctx.rotate(-Math.PI / 2);
+            }
 
             if (this.dyingTimer > 0 && Math.floor(this.dyingTimer * 10) % 2 === 0) {
                 ctx.filter = 'brightness(2.0) sepia(1) hue-rotate(-50deg) saturate(5)';
