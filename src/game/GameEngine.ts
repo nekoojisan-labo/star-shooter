@@ -30,6 +30,7 @@ export class GameEngine {
     keys: { [key: string]: boolean } = {};
     keysPressed: { [key: string]: boolean } = {}; // edge detection
     gamepadConnected: boolean = false;
+    debugMode: boolean = false; // invincibility toggle
     audioInitialized = false;
     stageTimer: number = 0;
     gameTimer: number = 0; // Continuous timer for animations like Bits
@@ -193,6 +194,11 @@ export class GameEngine {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (!this.keys[e.key]) this.keysPressed[e.key] = true;
             this.keys[e.key] = true;
+            // F1 toggles debug/invincibility mode
+            if (e.key === 'F1') {
+                e.preventDefault();
+                this.debugMode = !this.debugMode;
+            }
             if (!this.audioInitialized) {
                 audio.init();
                 this.audioInitialized = true;
@@ -424,6 +430,13 @@ export class GameEngine {
         const powerupPressed = btn(4) || btn(5);
         if (powerupPressed && !this.keys['x']) this.keysPressed['x'] = true;
         this.keys['x'] = powerupPressed;
+
+        // Select (btn 8) = Toggle debug/invincibility mode
+        const selectNowPressed = btn(8);
+        if (selectNowPressed && !this.keys['_select']) {
+            this.debugMode = !this.debugMode;
+        }
+        this.keys['_select'] = selectNowPressed;
 
         // Start (btn 9) = Enter / Pause
         const startPressed = btn(9);
@@ -812,6 +825,7 @@ export class GameEngine {
 
     playerHit() {
         if (this.player.invincibleTimer > 0) return;
+        if (this.debugMode) return; // invincible in debug mode
 
         if (this.audioInitialized) audio.playExplosion();
         // particles
@@ -967,6 +981,13 @@ export class GameEngine {
 
             this.ctx.textAlign = 'right';
             this.ctx.fillText(`STAGE: ${this.stage}`, this.width - 10, 30);
+
+            if (this.debugMode) {
+                this.ctx.fillStyle = '#FF4444';
+                this.ctx.font = 'bold 16px "Courier New"';
+                this.ctx.textAlign = 'right';
+                this.ctx.fillText('🔧 DEBUG [INVINCIBLE]', this.width - 10, 56);
+            }
 
             // Detailed Weapon stats removed as per user request
             // if (this.player.weapon.level > 1 || this.player.weapon.type !== WeaponType.Normal) {
