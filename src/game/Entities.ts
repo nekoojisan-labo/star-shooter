@@ -30,7 +30,10 @@ export class Entity {
 }
 
 export class Player extends Entity {
-    speed: number = 300;
+    baseSpeed: number = 300;
+    speedLevel: number = 0; // 0: 300, 1: 350, 2: 400, 3: 450
+    get speed(): number { return this.baseSpeed + this.speedLevel * 50; }
+
     shotTimer: number = 0;
     shotDelay: number = 0.12;
     subShotTimer: number = 0;
@@ -356,9 +359,8 @@ export class HomingBullet extends Bullet {
             this.speedX += (targetVX - this.speedX) * 1.5 * dt;
             this.speedY += (targetVY - this.speedY) * 1.5 * dt;
         } else {
-            // If no target, gradually straighten out and fly forward
-            this.speedX += (0 - this.speedX) * 2.0 * dt;
-            this.speedY += (-500 - this.speedY) * 2.0 * dt;
+            // If no target, maintain current velocity (do nothing)
+            // Prevent bullet from stopping in mid-air
         }
     }
 
@@ -441,8 +443,11 @@ export class Enemy extends Entity {
             for (let i = 0; i < 15; i++) {
                 this.engine.addParticle(new Particle(this.engine, this.x + this.width / 2, this.y + this.height / 2));
             }
-            if (Math.random() < 0.3) {
+            const rand = Math.random();
+            if (rand < 0.25) {
                 this.engine.powerups.push(new PowerUp(this.engine, this.x, this.y));
+            } else if (rand > 0.85) { // 15% chance to drop SpeedItem
+                this.engine.speedItems.push(new SpeedItem(this.engine, this.x, this.y));
             }
         }
     }
@@ -488,6 +493,28 @@ export class PowerUp extends Entity {
         ctx.fillStyle = '#000';
         ctx.font = '12px Courier';
         ctx.fillText('P', this.x + 8, this.y + 16);
+    }
+}
+
+export class SpeedItem extends Entity {
+    constructor(engine: GameEngine, x: number, y: number) {
+        super(engine, x, y, 24, 24);
+        this.speedY = 80; // slightly faster drop than P item
+    }
+
+    update(dt: number) {
+        super.update(dt);
+        if (this.y > this.engine.height + 50) this.active = false;
+    }
+
+    draw(ctx: CanvasRenderingContext2D) {
+        ctx.fillStyle = '#00FFAA'; // Cyan/Greenish to distinguish
+        ctx.beginPath();
+        ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#000';
+        ctx.font = 'bold 12px Courier';
+        ctx.fillText('S', this.x + 8, this.y + 16);
     }
 }
 

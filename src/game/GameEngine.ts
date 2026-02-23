@@ -1,7 +1,7 @@
 import { audio } from '../audio/AudioEngine';
 import { processSprite } from '../utils/ImageUtils';
 import { POWERUP_SLOTS, WeaponState } from './WeaponSystem';
-import { Entity, Player, Bullet, Enemy, PowerUp, Particle } from './Entities';
+import { Entity, Player, Bullet, Enemy, PowerUp, SpeedItem, Particle } from './Entities';
 import { PatternEnemy, Boss, EnemyMotionType, type TEnemyMotionType } from './EnemyTypes';
 
 export const GameState = {
@@ -64,6 +64,7 @@ export class GameEngine {
     enemies: Enemy[] = [];
     particles: Particle[] = [];
     powerups: PowerUp[] = [];
+    speedItems: SpeedItem[] = [];
 
     bgY: number = 0;
     enemySpawnTimer: number = 0;
@@ -463,12 +464,14 @@ export class GameEngine {
         this.enemies.forEach(e => e.update(dt));
         this.particles.forEach(p => p.update(dt));
         this.powerups.forEach(p => p.update(dt));
+        this.speedItems.forEach(s => s.update(dt));
 
         this.bullets = this.bullets.filter(b => b.active);
         this.enemyBullets = this.enemyBullets.filter(b => b.active);
         this.enemies = this.enemies.filter(e => e.active);
         this.particles = this.particles.filter(p => p.active);
         this.powerups = this.powerups.filter(p => p.active);
+        this.speedItems = this.speedItems.filter(s => s.active);
 
         this.checkCollisions();
 
@@ -517,6 +520,21 @@ export class GameEngine {
             }
         }
 
+        // Enemy hits Player Bits (Bits damage/destroy enemies)
+        for (const e of this.enemies) {
+            if (!e.active) continue;
+            for (const bit of this.player.bits) {
+                if (this.isAABB(bit, e)) {
+                    // Massive damage similar to bomb or direct body hit
+                    e.hit(100);
+                    // Do not destroy the bit here so it acts as a perm shield,
+                    // but add visual feedback
+                    for (let i = 0; i < 5; i++) this.addParticle(new Particle(this, e.x + e.width / 2, e.y + e.height / 2));
+                    break;
+                }
+            }
+        }
+
         // Enemy bullet hits Player
         for (const b of this.enemyBullets) {
             if (b.active && this.isAABB(this.player, b)) {
@@ -537,6 +555,23 @@ export class GameEngine {
                 if (this.audioInitialized) audio.playPowerup();
                 this.powerupGauge = (this.powerupGauge % POWERUP_SLOTS.length) + 1;
                 this.addScore(500);
+            }
+        }
+
+        // Player hits SpeedItem
+        for (const s of this.speedItems) {
+            if (s.active && this.isAABB(this.player, s)) {
+                s.active = false;
+                if (this.audioInitialized) audio.playPowerup(); // Or a custom sound if desired
+                this.player.speedLevel = Math.min(this.player.speedLevel + 1, 3);
+                this.addScore(500);
+
+                // Visual feedback for speed up
+                for (let i = 0; i < 5; i++) {
+                    const p = new Particle(this, this.player.x + this.player.width / 2, this.player.y + this.player.height);
+                    p.color = '#00FFAA';
+                    this.addParticle(p);
+                }
             }
         }
     }
@@ -604,6 +639,7 @@ export class GameEngine {
             this.player.bits = [];
             this.player.barrierHp = 0;
             this.player.bombCount = 2;
+            this.player.speedLevel = 0;
         }
 
         this.powerupGauge = 0;
@@ -611,6 +647,7 @@ export class GameEngine {
         this.bullets = [];
         this.enemyBullets = [];
         this.powerups = [];
+        this.speedItems = [];
         this.bossActive = false;
         if (this.audioInitialized) audio.playBGM(this.stage);
     }
@@ -670,6 +707,7 @@ export class GameEngine {
         }
 
         this.powerups.forEach(p => p.draw(this.ctx));
+        this.speedItems.forEach(s => s.draw(this.ctx));
         this.enemies.forEach(e => e.draw(this.ctx));
         this.bullets.forEach(b => b.draw(this.ctx));
         this.enemyBullets.forEach(b => b.draw(this.ctx));
