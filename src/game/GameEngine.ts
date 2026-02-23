@@ -39,7 +39,7 @@ export class GameEngine {
     // Assets
     playerImage = new Image();
     enemyImage = new Image();
-    bossImage = new Image();
+    bossImages: HTMLImageElement[] = [];
     bgImages: HTMLImageElement[] = [];
     bulletBlueImage = new Image();
     bulletPinkImage = new Image();
@@ -101,12 +101,14 @@ export class GameEngine {
             src: `${import.meta.env.BASE_URL}assets/enemies.png`,
             removeBg: true
         });
-        this.bossImage = await processSprite({
-            src: `${import.meta.env.BASE_URL}assets/boss.png`,
-            crop: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
-            removeBg: true,
-            rotate180: true
-        });
+        for (let i = 1; i <= 5; i++) {
+            this.bossImages[i] = await processSprite({
+                src: `${import.meta.env.BASE_URL}assets/boss_${i}.png`,
+                crop: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
+                removeBg: true,
+                rotate180: true
+            });
+        }
 
         this.bulletBlueImage = await processSprite({ src: `${import.meta.env.BASE_URL}assets/bullet_blue.png`, removeBg: true });
         this.bulletPinkImage = await processSprite({ src: `${import.meta.env.BASE_URL}assets/bullet_pink.png`, removeBg: true });
@@ -443,10 +445,9 @@ export class GameEngine {
                 midBoss.isMidBoss = true;
                 midBoss.scoreValue = 3000;
                 const baseHp = 150 * this.stage;
-                midBoss.phases = [
-                    { hp: baseHp, update: midBoss.genericPhase1 },
-                    { hp: baseHp * 1.5, update: midBoss.genericPhase2 }
-                ];
+                midBoss.phases = midBoss.phases.slice(0, 2);
+                midBoss.phases[0].hp = baseHp;
+                if (midBoss.phases[1]) midBoss.phases[1].hp = baseHp * 1.5;
                 midBoss.hp = midBoss.phases[0].hp;
                 this.addEnemy(midBoss);
             }
