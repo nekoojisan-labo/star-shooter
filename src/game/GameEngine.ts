@@ -9,7 +9,8 @@ export const GameState = {
     Playing: 1,
     GameOver: 2,
     StageClear: 3,
-    Config: 4
+    Config: 4,
+    Scenario: 5
 } as const;
 export type GameState = typeof GameState[keyof typeof GameState];
 
@@ -83,6 +84,49 @@ export class GameEngine {
     isMobile: boolean = false;
 
     cleanup: () => void;
+
+    // ----- Scenario Texts -----
+    scenarioTimer: number = 0;
+    currentScenarioTextIndex: number = 0;
+    scenarioTexts: string[][] = [
+        // Stage 0 -> 1 (Opening)
+        [
+            "西暦 21XX年。突如として飛来した機械生命体群により、",
+            "人類の拠点は次々と陥落した。",
+            "残された最後の希望は、未完成の試作型高機動戦闘機『スターシューター』のみ。",
+            "パイロットよ、全人類の未来は君の双肩に懸かっている。",
+            "出撃せよ。敵の防衛線を突破し、中枢『マスターコア』を破壊するのだ！"
+        ],
+        // Stage 1 -> 2
+        [
+            "前線基地の防衛部隊を突破した。",
+            "だが、これは敵の大軍勢のほんの一部に過ぎない。",
+            "敵の補給線を断つため、アステロイド帯に築かれた採掘基地へと向かう。"
+        ],
+        // Stage 2 -> 3
+        [
+            "小惑星基地を破壊し、敵の資源供給を絶った。進路はクリアだ。",
+            "次なる標的は、惑星軌道上に浮かぶ強固な軍事要塞である。"
+        ],
+        // Stage 3 -> 4
+        [
+            "堅牢な要塞のコアを沈めた。敵の防衛網に完全に穴が開いた。",
+            "敵は急遽、高速空母を派遣しこちらの迎撃に出た模様。",
+            "部隊を振り切り、敵母星へと突入せよ。"
+        ],
+        // Stage 4 -> 5
+        [
+            "敵の精鋭機動部隊を退けた。",
+            "遂に敵母星の中枢『マスターコア』が眼前にある。",
+            "すべての元凶を断ち切るため、最終ミッションへ移行する。生きて帰るぞ。"
+        ]
+    ];
+    endingTexts: string[] = [
+        "マスターコアは沈黙し、機械生命体群は統制を失い活動を停止していく。",
+        "あなたの孤独な戦いにより、人類は再び平和な星空を取り戻した。",
+        "作戦完了、これより帰還する。",
+        "-- THANK YOU FOR PLAYING --"
+    ];
 
     async loadAssets() {
         for (let i = 1; i <= 3; i++) {
@@ -361,12 +405,36 @@ export class GameEngine {
             this.player.update(dt); // allow player to move during result
 
             if (this.keysPressed['Enter']) {
-                if (this.stage >= 3) {
-                    this.resetToTitle();
+                if (this.stage >= 5) {
+                    // Start Ending
+                    this.gameState = GameState.Scenario;
+                    this.scenarioTimer = 0;
+                    this.currentScenarioTextIndex = 0;
                 } else {
                     this.stage++;
-                    this.resetGame('nextStage');
-                    this.gameState = GameState.Playing;
+                    this.gameState = GameState.Scenario;
+                    this.scenarioTimer = 0;
+                    this.currentScenarioTextIndex = 0;
+                }
+            }
+            this.keysPressed = {};
+            return;
+        }
+
+        if (this.gameState === GameState.Scenario) {
+            this.scenarioTimer += dt;
+
+            // Wait a bit before allowing skip, or fast forward text
+            if (this.scenarioTimer > 0.5 && this.keysPressed['Enter']) {
+                this.scenarioTimer = 999; // fast forward text or skip
+
+                if (this.scenarioTimer > 1.0) { // Require press again to skip page
+                    if (this.stage > 5) {
+                        this.resetToTitle(); // Ending finished
+                    } else {
+                        this.resetGame(this.stage === 1 ? 'new' : 'nextStage');
+                        this.gameState = GameState.Playing;
+                    }
                 }
             }
             this.keysPressed = {};
@@ -934,7 +1002,7 @@ export class GameEngine {
             this.ctx.fillStyle = '#00FF00';
             this.ctx.font = 'bold 50px "Courier New"';
             this.ctx.textAlign = 'center';
-            if (this.stage >= 3) {
+            if (this.stage >= 5) {
                 this.ctx.fillText(`ALL STAGES CLEAR!`, this.width / 2, this.height / 3);
             } else {
                 this.ctx.fillText(`STAGE ${this.stage} CLEAR!`, this.width / 2, this.height / 3);
@@ -942,10 +1010,47 @@ export class GameEngine {
 
             this.ctx.fillStyle = '#FFFFFF';
             this.ctx.font = '20px "Courier New"';
-            if (this.stage >= 3) {
-                this.ctx.fillText('PRESS ENTER TO RETURN TO TITLE', this.width / 2, this.height / 2 + 50);
+            if (this.stage >= 5) {
+                this.ctx.fillText('PRESS ENTER FOR ENDING', this.width / 2, this.height / 2 + 50);
             } else {
-                this.ctx.fillText('PRESS ENTER FOR NEXT STAGE', this.width / 2, this.height / 2 + 50);
+                this.ctx.fillText('PRESS ENTER FOR NEXT SEQUENCE', this.width / 2, this.height / 2 + 50);
+            }
+        } else if (this.gameState === GameState.Scenario) {
+            this.drawScenario();
+        }
+    }
+
+    drawScenario() {
+        // Dark background overlay
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+        this.ctx.fillRect(0, 0, this.width, this.height);
+
+        const lines = this.stage > 5 ? this.endingTexts : this.scenarioTexts[this.stage ? this.stage - 1 : 0];
+        if (!lines) return;
+
+        this.ctx.font = 'bold 20px "Courier New"';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillStyle = 'white';
+
+        const lineSpacing = 35;
+        const startY = this.height / 2 - (lines.length * lineSpacing) / 2;
+
+        for (let i = 0; i < lines.length; i++) {
+            // Reveal text based on timer (1 line per 1.5 seconds)
+            const revealTime = i * 1.5;
+            if (this.scenarioTimer > revealTime) {
+                const timeInLine = this.scenarioTimer - revealTime;
+                const charsToShow = Math.floor(timeInLine * 25); // ~25 chars per sec
+                const text = lines[i].substring(0, charsToShow);
+                this.ctx.fillText(text, this.width / 2, startY + i * lineSpacing);
+            }
+        }
+
+        // Blinking skip prompt when all text is finished rendering
+        if (this.scenarioTimer > lines.length * 1.5 + 1.0) {
+            if (Math.floor(this.scenarioTimer * 2) % 2 === 0) {
+                this.ctx.fillStyle = '#AAAAAA';
+                this.ctx.fillText('PRESS ENTER TO CONTINUE', this.width / 2, this.height - 50);
             }
         }
     }
