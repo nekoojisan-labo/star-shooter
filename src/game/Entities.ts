@@ -355,6 +355,10 @@ export class HomingBullet extends Bullet {
             // Limit tracking strength (reduced from 5 to 1.5)
             this.speedX += (targetVX - this.speedX) * 1.5 * dt;
             this.speedY += (targetVY - this.speedY) * 1.5 * dt;
+        } else {
+            // If no target, gradually straighten out and fly forward
+            this.speedX += (0 - this.speedX) * 2.0 * dt;
+            this.speedY += (-500 - this.speedY) * 2.0 * dt;
         }
     }
 

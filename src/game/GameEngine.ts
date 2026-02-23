@@ -508,10 +508,8 @@ export class GameEngine {
         for (const b of this.enemyBullets) {
             if (!b.active) continue;
             for (const bit of this.player.bits) {
-                const dx = (bit.x + bit.width / 2) - (b.x + b.width / 2);
-                const dy = (bit.y + bit.height / 2) - (b.y + b.height / 2);
-                // 18 is the combined radii of bit (width 20 -> r 10) and EnemyBullet (width 16 -> r 8)
-                if (dx * dx + dy * dy < 18 * 18) {
+                // Use AABB for consistent collision across all bullet types/sizes
+                if (this.isAABB(bit, b)) {
                     b.active = false;
                     for (let i = 0; i < 3; i++) this.addParticle(new Particle(this, b.x + b.width / 2, b.y + b.height / 2));
                     break;
