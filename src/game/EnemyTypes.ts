@@ -200,6 +200,9 @@ export class Boss extends Enemy {
     isMidBoss: boolean = false;
     startX: number = 0;
     startY: number = 0;
+    phaseTimer: number = 0;
+    phaseDuration: number = 25;
+    bossHitSoundTimer: number = 0; // prevent sound from firing every single frame
 
     constructor(engine: GameEngine, x: number, y: number, bossType: number) {
         super(engine, x, y);
@@ -251,7 +254,9 @@ export class Boss extends Enemy {
                 break;
         }
 
-        this.hp = this.phases[0].hp;
+        // Mid-boss: 1990 base (-10% from 2210), Boss: 3790 base
+        this.hp = (this.isMidBoss ? 1990 : 3790) + bossType * 950;
+        this.phaseDuration = 20 + Math.random() * 10;
         this.speedY = 100; // Entry speed
     }
 
@@ -288,6 +293,24 @@ export class Boss extends Enemy {
         }
 
         this.timer += dt;
+        this.phaseTimer += dt;
+        this.bossHitSoundTimer -= dt;
+
+        // Time-based phase transition
+        if (this.phaseTimer >= this.phaseDuration && this.currentPhase < this.phases.length - 1) {
+            this.currentPhase++;
+            this.phaseTimer = 0;
+            this.phaseDuration = 20 + Math.random() * 10;
+            this.timer = 0; // reset pattern timer for the new phase
+
+            // Visual feedback for phase shift
+            for (let i = 0; i < 20; i++) {
+                const p = new Particle(this.engine, this.x + this.width / 2, this.y + this.height / 2);
+                p.color = '#FFFFFF';
+                this.engine.addParticle(p);
+            }
+            if (this.engine.audioInitialized) audio.playExplosion();
+        }
 
         // Execute current phase
         if (this.currentPhase < this.phases.length) {
@@ -300,26 +323,30 @@ export class Boss extends Enemy {
         this.hp -= damage;
         this.engine.addScore(10);
 
+        // Play a distinct metallic boss hit sound (throttled to avoid noise spam)
+        if (this.bossHitSoundTimer <= 0 && this.engine.audioInitialized) {
+            audio.playBossHit();
+            this.bossHitSoundTimer = 0.06; // throttle: max ~16 hits/sec
+        }
+
         if (this.hp <= 0 && this.dyingTimer <= 0) {
-            this.currentPhase++;
-            if (this.currentPhase >= this.phases.length) {
-                this.dyingTimer = 2.0;
-                if (this.engine.audioInitialized) audio.playExplosion();
-            } else {
-                this.hp = this.phases[this.currentPhase].hp;
-                this.timer = 0; // reset pattern timer
-                for (let i = 0; i < 20; i++) {
-                    const p = new Particle(this.engine, this.x + this.width / 2, this.y + this.height / 2);
-                    p.color = '#FFFFFF';
+            this.dyingTimer = 2.0;
+            if (this.engine.audioInitialized) audio.playExplosion();
+
+            // Final death explosions
+            for (let i = 0; i < 30; i++) {
+                setTimeout(() => {
+                    const p = new Particle(this.engine, this.x + Math.random() * this.width, this.y + Math.random() * this.height);
+                    p.color = '#FFAA00';
                     this.engine.addParticle(p);
-                }
-                if (this.engine.audioInitialized) audio.playExplosion();
+                }, Math.random() * 2000);
             }
         }
     }
 
     draw(ctx: CanvasRenderingContext2D) {
-        const img = this.engine.bossImage;
+        // Fallback to bossImages[0] if the specific one is not available
+        const img = this.engine.bossImages[this.bossType - 1] || this.engine.bossImages[0];
         if (img && img.complete && img.naturalWidth > 0) {
             ctx.save();
             ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
@@ -363,10 +390,10 @@ export class Boss extends Enemy {
         boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer) * 150;
 
         // Straight thick laser down the middle & 3-way
-        if (boss.timer % 0.8 < 0.1) {
+        if (boss.timer % 1.5 < 0.1) {
             boss.fireAngle(Math.PI / 2, 350, '#FF0055');
-            boss.fireAngle(Math.PI / 2 + 0.1, 350, '#FF0055');
-            boss.fireAngle(Math.PI / 2 - 0.1, 350, '#FF0055');
+            boss.fireAngle(Math.PI / 2 + 0.15, 350, '#FF0055'); // wider gap
+            boss.fireAngle(Math.PI / 2 - 0.15, 350, '#FF0055');
         }
         // Fan bullets from sides
         if (boss.timer % 1.5 < 0.1) {
@@ -390,24 +417,36 @@ export class Boss extends Enemy {
     // ============================================
     // === STAGE 2 BOSS: ASTEROID BASE ===
     // ============================================
-    boss2Phase1(boss: Boss, _dt: number) {
-        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 0.5) * 100;
-        boss.y = 50 + Math.sin(boss.timer * 2) * 80; // Bouncing up and down
+    boss2Phase1(boss: Boss, dt: number) {
+        // Horizontal sway only (NOT overwriting Y - that conflicts with entry guard)
+        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 0.5) * 120;
+        boss.y += Math.sin(boss.timer * 2) * 40 * dt; // Y only nudged, not set directly
+        boss.y = Math.max(20, Math.min(150, boss.y)); // clamp to top area
 
-        // Spread of heavy slow bullets
-        if (boss.timer % 0.6 < 0.1) {
-            for (let i = 0; i < 8; i++) {
-                boss.fireAngle(Math.PI / 2 + (Math.random() - 0.5) * 2.0, 150 + Math.random() * 50, '#FFAA55');
+        // Spread of random slow bullets with clear fire-pause gap
+        if ((boss.timer % 3.0 < 2.0) && boss.timer % 0.7 < 0.1) {
+            for (let i = 0; i < 5; i++) {
+                boss.fireAngle(Math.PI / 2 + (Math.random() - 0.5) * 1.6, 140 + Math.random() * 60, '#FFAA55');
             }
+        }
+
+        // Aimed shot every 2.5 seconds
+        if (boss.timer % 2.5 < 0.1) {
+            boss.fireAtPlayer(280);
         }
     }
     boss2Phase2(boss: Boss, _dt: number) {
         boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 2) * 200;
-        boss.y = 20 + Math.abs(Math.sin(boss.timer * 3) * 120);
 
-        // Rapid machine gun firing at player
-        if (boss.timer % 0.1 < 0.05) {
-            boss.fireAtPlayer(400);
+        // Controlled machine gun - shoots in bursts with gaps
+        if ((boss.timer % 2.0 < 1.0) && boss.timer % 0.25 < 0.1) {
+            boss.fireAtPlayer(380);
+        }
+        // Fan spray between bursts
+        if (boss.timer % 2.0 > 1.5 && boss.timer % 0.5 < 0.1) {
+            for (let i = -2; i <= 2; i++) {
+                boss.fireAngle(Math.PI / 2 + i * 0.25, 200, '#FFAA55');
+            }
         }
     }
 
@@ -446,8 +485,8 @@ export class Boss extends Enemy {
         boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 3.5) * 220;
         boss.y = 30 + Math.cos(boss.timer * 4) * 20;
 
-        // Dense rapid fire downwards (rain attack)
-        if (boss.timer % 0.06 < 0.04) {
+        // Dense rapid fire downwards (rain attack) with gaps
+        if ((boss.timer % 2.5 < 1.5) && boss.timer % 0.1 < 0.05) {
             boss.fireAngle(Math.PI / 2 + (Math.random() - 0.5) * 0.3, 400, '#00FFAA');
         }
     }
@@ -505,12 +544,12 @@ export class Boss extends Enemy {
         boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 4) * 200;
         boss.y = 20 + Math.abs(Math.cos(boss.timer * 5) * 150);
 
-        if (boss.timer % 0.05 < 0.05) {
-            boss.fireAngle(Math.PI / 2 + Math.sin(boss.timer * 10) * 1.5, 350, '#FF0000');
-            boss.fireAngle(Math.PI / 2 + Math.sin(boss.timer * 10 + Math.PI) * 1.5, 350, '#FF0000');
+        if ((boss.timer % 3.0 < 2.0) && boss.timer % 0.1 < 0.05) {
+            boss.fireAngle(Math.PI / 2 + Math.sin(boss.timer * 8) * 1.5, 300, '#FF0000');
+            boss.fireAngle(Math.PI / 2 + Math.sin(boss.timer * 8 + Math.PI) * 1.5, 300, '#FF0000');
         }
-        if (boss.timer % 0.3 < 0.1) {
-            boss.fireAtPlayer(500);
+        if (boss.timer % 1.0 < 0.1) {
+            boss.fireAtPlayer(450);
         }
     }
 }

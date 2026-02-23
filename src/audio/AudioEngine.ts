@@ -28,6 +28,11 @@ class AudioEngine {
             bgms.forEach(bgm => this.loadBGM(bgm));
             for (let i = 0; i <= 5; i++) this.loadVoice(i);
         }
+
+        // ブラウザの自動再生ポリシーで suspended になっている場合は resume する
+        if (this.ctx && this.ctx.state === 'suspended') {
+            await this.ctx.resume();
+        }
     }
 
     async loadBGM(name: string) {
@@ -163,6 +168,29 @@ class AudioEngine {
         osc.stop(now + 0.15);
     }
 
+    // ボス被弾音 (金属音から爆発音風に変更)
+    playBossHit() {
+        if (!this.ctx || !this.sfxGainNode) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        // 爆発音と同じくノイズ風の低い周波数の変調
+        osc.type = 'sawtooth';
+        osc.connect(gain);
+        gain.connect(this.sfxGainNode);
+
+        const now = this.ctx.currentTime;
+        // 低めの音から素早く落とす
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.exponentialRampToValueAtTime(30, now + 0.15);
+
+        gain.gain.setValueAtTime(0.4, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+
+        osc.start(now);
+        osc.stop(now + 0.15);
+    }
+
     // ナレーション音声再生（再生中はBGMをダッキングする）
     playVoice(index: number) {
         if (!this.ctx || !this.sfxGainNode || !this.bgmGainNode) return;
@@ -192,6 +220,12 @@ class AudioEngine {
     // 用意したBGM(.mp3)のクロスフェードループ再生
     playBGM(name: string, crossfadeDuration: number = 2.0) {
         if (!this.ctx || !this.bgmGainNode) return;
+
+        // AudioContext が suspend されている場合は resume して再生を保証する
+        if (this.ctx.state === 'suspended') {
+            this.ctx.resume().then(() => this.playBGM(name, crossfadeDuration));
+            return;
+        }
 
         const buffer = this.bgmBuffers[name];
         if (!buffer) {
