@@ -314,6 +314,8 @@ export class EnemyBullet extends Bullet {
 export class HomingBullet extends Bullet {
     target: Enemy | null = null;
     timer: number = 0;
+    totalLifespan: number = 0;
+    maxLifespan: number = 5.0; // Seconds until it self-destructs if it never hits
 
     constructor(engine: GameEngine, x: number, y: number, speedX: number, speedY: number) {
         super(engine, x, y, speedX, speedY);
@@ -325,6 +327,12 @@ export class HomingBullet extends Bullet {
     update(dt: number) {
         super.update(dt);
         this.timer += dt;
+        this.totalLifespan += dt;
+
+        if (this.totalLifespan >= this.maxLifespan) {
+            this.active = false;
+            return;
+        }
 
         // Find closest target occasionally or if target lost
         if (!this.target || !this.target.active || this.timer > 0.5) {
