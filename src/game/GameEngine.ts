@@ -169,7 +169,8 @@ export class GameEngine {
                 const margin = 12;
                 const gaugeHeight = 36;
                 const gaugePadding = 8;
-                const btnY = this.height - gaugeHeight - gaugePadding - btnSize - margin;
+                const safeBottom = 60;
+                const btnY = this.height - safeBottom - gaugeHeight - gaugePadding - btnSize - margin;
 
                 const cx = touch.clientX;
                 const cy = touch.clientY;
@@ -193,7 +194,7 @@ export class GameEngine {
                 }
 
                 // Tapped on gauge area
-                if (touch.clientY > this.height - gaugeHeight - gaugePadding) {
+                if (touch.clientY > this.height - safeBottom - gaugeHeight - gaugePadding) {
                     if (!this.keys['x']) this.keysPressed['x'] = true;
                     this.keys['x'] = true;
                 } else {
@@ -589,6 +590,7 @@ export class GameEngine {
         this.player.weapon = new WeaponState();
         this.player.bits = [];
         this.player.barrierHp = 0;
+        this.player.speedLevel = 0;
 
         if (this.lives <= 0) {
             this.gameState = GameState.GameOver;
@@ -728,8 +730,12 @@ export class GameEngine {
             this.ctx.font = 'bold 20px "Courier New"';
             this.ctx.textAlign = 'left';
             this.ctx.fillText(`SCORE: ${this.score}`, 10, 30);
-            this.ctx.fillText(`LIVES: ${'❤'.repeat(Math.max(0, this.lives))}`, 10, 60);
-            this.ctx.fillText(`BOMBS: ${'B'.repeat(Math.max(0, this.player.bombCount))}`, 10, 90);
+
+            if (!this.isMobile) {
+                this.ctx.fillText(`LIVES: ${'❤'.repeat(Math.max(0, this.lives))}`, 10, 60);
+                this.ctx.fillText(`BOMBS: ${'B'.repeat(Math.max(0, this.player.bombCount))}`, 10, 90);
+            }
+
             this.ctx.textAlign = 'right';
             this.ctx.fillText(`STAGE: ${this.stage}`, this.width - 10, 30);
 
@@ -744,7 +750,15 @@ export class GameEngine {
                 const margin = 12;
                 const gaugeHeight = 36;
                 const gaugePadding = 8;
-                const btnY = this.height - gaugeHeight - gaugePadding - btnSize - margin;
+                const safeBottom = 60;
+                const btnY = this.height - safeBottom - gaugeHeight - gaugePadding - btnSize - margin;
+
+                // Mobile specific info (Lives / Bombs)
+                this.ctx.fillStyle = 'white';
+                this.ctx.font = 'bold 16px "Courier New"';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText(`LIVES: ${'❤'.repeat(Math.max(0, this.lives))}`, margin + btnSize / 2, btnY - 15);
+                this.ctx.fillText(`BOMB: ${this.player.bombCount}`, margin + btnSize / 2, btnY + btnSize + 25);
 
                 // Bomb Button (Left)
                 const bombX = margin;
@@ -799,7 +813,8 @@ export class GameEngine {
             }
 
             // ---- Draw Gradius Powerup Gauge ----
-            const gaugeBottomMargin = this.isMobile ? 8 : 0;
+            const safeBottom = this.isMobile ? 60 : 0;
+            const gaugeBottomMargin = this.isMobile ? (8 + safeBottom) : 0;
             const gaugeSlotHeight = this.isMobile ? 30 : 20;
             const maxSlotWidth = 80;
             let slotWidth = (this.width - 20) / POWERUP_SLOTS.length;
