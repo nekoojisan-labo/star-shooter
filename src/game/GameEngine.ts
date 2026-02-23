@@ -213,7 +213,8 @@ export class GameEngine {
                 audio.init();
                 this.audioInitialized = true;
             }
-            if (this.gameState === GameState.Title || this.gameState === GameState.GameOver || this.gameState === GameState.StageClear) {
+            if (this.gameState === GameState.Title || this.gameState === GameState.GameOver || this.gameState === GameState.StageClear
+                || this.gameState === GameState.Scenario || this.gameState === GameState.Paused) {
                 if (!this.keys['Enter']) this.keysPressed['Enter'] = true;
                 this.keys['Enter'] = true;
                 return;

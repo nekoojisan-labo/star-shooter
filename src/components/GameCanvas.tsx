@@ -80,8 +80,9 @@ const GameCanvas: React.FC = () => {
         top: 0,
         left: 0,
         width: '100vw',
-        height: '100vh',
-        backgroundColor: '#000'
+        height: '100dvh',        // dvh = dynamic viewport height (excludes browser chrome on mobile)
+        backgroundColor: '#000',
+        touchAction: 'none',     // prevent default scroll/zoom on canvas
       }}
     />
   );
