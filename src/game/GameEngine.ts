@@ -29,6 +29,7 @@ export class GameEngine {
     height: number;
     keys: { [key: string]: boolean } = {};
     keysPressed: { [key: string]: boolean } = {}; // edge detection
+    gamepadConnected: boolean = false;
     audioInitialized = false;
     stageTimer: number = 0;
     gameTimer: number = 0; // Continuous timer for animations like Bits
@@ -384,6 +385,7 @@ export class GameEngine {
         for (let i = 0; i < gamepads.length; i++) {
             if (gamepads[i]) { gp = gamepads[i]; break; }
         }
+        this.gamepadConnected = !!gp;
         if (!gp) return;
 
         const DEADZONE = 0.3;
@@ -450,7 +452,7 @@ export class GameEngine {
             return;
         }
         if (this.gameState === GameState.Title) {
-            if (this.keysPressed['Enter']) {
+            if (this.keysPressed['Enter'] || this.keysPressed['z']) {
                 if (!this.audioInitialized) {
                     audio.init();
                     this.audioInitialized = true;
@@ -493,7 +495,7 @@ export class GameEngine {
                 }
             }
 
-            if ((this.keysPressed['Enter'] || this.keysPressed[' ']) && this.configSelection === 2) {
+            if ((this.keysPressed['Enter'] || this.keysPressed[' '] || this.keysPressed['z']) && this.configSelection === 2) {
                 this.gameState = GameState.Title;
             }
             this.keysPressed = {};
@@ -1119,11 +1121,17 @@ export class GameEngine {
 
             this.ctx.fillStyle = '#00FF00';
             this.ctx.font = '20px "Courier New"';
-            this.ctx.fillText('PRESS ENTER TO START', this.width / 2, this.height / 2 + 50);
+            this.ctx.fillText('PRESS ENTER OR SHOOT(Y) TO START', this.width / 2, this.height / 2 + 50);
 
             this.ctx.fillStyle = '#AAAAAA';
             this.ctx.font = '16px "Courier New"';
-            this.ctx.fillText('PRESS SHIFT FOR CONFIG', this.width / 2, this.height / 2 + 90);
+            this.ctx.fillText('PRESS C FOR CONFIG', this.width / 2, this.height / 2 + 90);
+
+            if (this.gamepadConnected) {
+                this.ctx.fillStyle = '#00FFFF';
+                this.ctx.font = 'bold 16px "Courier New"';
+                this.ctx.fillText('🎮 GAMEPAD CONNECTED', this.width / 2, this.height / 2 + 130);
+            }
 
         } else if (this.gameState === GameState.Config) {
             this.ctx.fillStyle = 'rgba(0,0,0,0.8)';
