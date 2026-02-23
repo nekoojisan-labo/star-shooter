@@ -87,14 +87,16 @@ export class PatternEnemy extends Enemy {
                     // move down
                 } else if (this.timer < 2.0) {
                     this.speedY = 0;
-                    if (Math.random() < 0.05) this.fireAtPlayer();
+                    if (Math.random() < 0.12) this.fireAtPlayer(); // Stage 2+: more aggressive
                 } else {
                     this.speedY = 150;
                 }
                 break;
             case EnemyMotionType.Sniper:
                 if (this.timer > 1.0 && this.timer < 1.1) {
-                    this.fireAtPlayer(500);
+                    // Double burst with slight angle spread
+                    this.fireAtPlayer(520);
+                    this.fireAtPlayer(480);
                     this.timer = 2.0;
                 }
                 break;
@@ -121,10 +123,10 @@ export class PatternEnemy extends Enemy {
             case EnemyMotionType.Bomber:
                 if (this.timer > 1.5 && this.timer < 1.6) {
                     this.timer = 2.0;
-                    for (let i = 0; i < 8; i++) {
-                        const angle = (Math.PI / 4) * i;
-                        const bx = Math.cos(angle) * 200;
-                        const by = Math.sin(angle) * 200;
+                    for (let i = 0; i < 12; i++) {
+                        const angle = (Math.PI * 2 / 12) * i;
+                        const bx = Math.cos(angle) * 260;
+                        const by = Math.sin(angle) * 260;
                         const bullet = new Bullet(this.engine, this.x + this.width / 2 - 4, this.y + this.height / 2, bx, by);
                         bullet.color = '#FF5500';
                         this.engine.addEnemyBullet(bullet);
@@ -143,7 +145,21 @@ export class PatternEnemy extends Enemy {
                 if (this.y > 100) {
                     this.speedY = 0;
                     this.x += Math.sin(this.timer) * 50 * dt;
-                    if (Math.random() < 0.02) this.fireAtPlayer();
+                    if (Math.random() < 0.05) {
+                        this.fireAtPlayer();
+                        // Occasionally fire 3-way
+                        if (Math.random() < 0.3) {
+                            const dx = (this.engine.player.x + this.engine.player.width / 2) - (this.x + this.width / 2);
+                            const dy = (this.engine.player.y + this.engine.player.height / 2) - (this.y + this.height / 2);
+                            const baseAngle = Math.atan2(dy, dx);
+                            const spd = 300;
+                            for (const offset of [-0.25, 0.25]) {
+                                const b = new EnemyBullet(this.engine, this.x + this.width / 2 - 8, this.y + this.height, Math.cos(baseAngle + offset) * spd, Math.sin(baseAngle + offset) * spd);
+                                b.color = '#FFAA55';
+                                this.engine.addEnemyBullet(b);
+                            }
+                        }
+                    }
                 }
                 break;
             case EnemyMotionType.Kamikaze:
@@ -153,8 +169,8 @@ export class PatternEnemy extends Enemy {
                 this.x = this.originX + Math.sin(this.timer) * this.engine.width / 2;
                 break;
             case EnemyMotionType.Burster:
-                if (this.timer % 2.0 < 0.1) {
-                    this.fireAtPlayer(400);
+                if (this.timer % 1.0 < 0.1) {
+                    this.fireAtPlayer(360);
                 }
                 break;
             case EnemyMotionType.Drifter:
@@ -163,7 +179,7 @@ export class PatternEnemy extends Enemy {
                 break;
             case EnemyMotionType.Tank:
                 this.speedY = 30;
-                if (Math.random() < 0.03) this.fireAtPlayer(100);
+                if (Math.random() < 0.06) this.fireAtPlayer(120);
                 break;
             default:
                 break;
@@ -254,11 +270,93 @@ export class Boss extends Enemy {
                 break;
         }
 
-        // Mid-boss: 1990 base (-10% from 2210), Boss: 3790 base
-        // Mid-boss: 1790 base (-10% from 1990), Boss: 3790 base
-        this.hp = (this.isMidBoss ? 1790 : 3790) + bossType * 950;
+        // HP: Boss is always significantly stronger than mid-boss
+        // Mid-boss: 1790 + bossType*850 | Boss: 3800 + bossType*1200
+        this.hp = (this.isMidBoss ? 1790 + bossType * 850 : 3800 + bossType * 1200);
         this.phaseDuration = 20 + Math.random() * 10;
         this.speedY = 100; // Entry speed
+    }
+
+    // Call this AFTER setting isMidBoss to assign correct phases
+    initPhases() {
+        const bossType = this.bossType;
+        const baseHp = 150 + bossType * 100;
+
+        if (this.isMidBoss) {
+            // ---- MID-BOSS PATTERNS (unique per stage) ----
+            switch (bossType) {
+                case 1:
+                    this.phases = [
+                        { hp: baseHp, update: this.midBoss1Phase1 },
+                        { hp: baseHp * 1.3, update: this.midBoss1Phase2 }
+                    ];
+                    break;
+                case 2:
+                    this.phases = [
+                        { hp: baseHp * 1.2, update: this.midBoss2Phase1 },
+                        { hp: baseHp * 1.5, update: this.midBoss2Phase2 }
+                    ];
+                    break;
+                case 3:
+                    this.phases = [
+                        { hp: baseHp * 1.4, update: this.midBoss3Phase1 },
+                        { hp: baseHp * 1.8, update: this.midBoss3Phase2 }
+                    ];
+                    break;
+                case 4:
+                    this.phases = [
+                        { hp: baseHp * 1.6, update: this.midBoss4Phase1 },
+                        { hp: baseHp * 2.0, update: this.midBoss4Phase2 }
+                    ];
+                    break;
+                default:
+                    this.phases = [
+                        { hp: baseHp * 1.8, update: this.midBoss5Phase1 },
+                        { hp: baseHp * 2.2, update: this.midBoss5Phase2 }
+                    ];
+                    break;
+            }
+        } else {
+            // ---- BOSS PATTERNS (existing, slightly boosted) ----
+            switch (bossType) {
+                case 1:
+                    this.phases = [
+                        { hp: baseHp, update: this.boss1Phase1 },
+                        { hp: baseHp * 1.5, update: this.boss1Phase2 }
+                    ];
+                    break;
+                case 2:
+                    this.phases = [
+                        { hp: baseHp * 1.5, update: this.boss2Phase1 },
+                        { hp: baseHp * 2.0, update: this.boss2Phase2 }
+                    ];
+                    break;
+                case 3:
+                    this.phases = [
+                        { hp: baseHp * 1.8, update: this.boss3Phase1 },
+                        { hp: baseHp * 2.2, update: this.boss3Phase2 }
+                    ];
+                    break;
+                case 4:
+                    this.phases = [
+                        { hp: baseHp * 2.0, update: this.boss4Phase1 },
+                        { hp: baseHp * 2.5, update: this.boss4Phase2 }
+                    ];
+                    break;
+                case 5:
+                    this.phases = [
+                        { hp: baseHp * 2.5, update: this.boss5Phase1 },
+                        { hp: baseHp * 3.0, update: this.boss5Phase2 },
+                        { hp: baseHp * 3.5, update: this.boss5Phase3 }
+                    ];
+                    break;
+                default:
+                    this.phases = [
+                        { hp: baseHp, update: this.boss1Phase1 }
+                    ];
+                    break;
+            }
+        }
     }
 
     update(dt: number) {
@@ -553,6 +651,149 @@ export class Boss extends Enemy {
         }
         if (boss.timer % 1.0 < 0.1) {
             boss.fireAtPlayer(450);
+        }
+    }
+
+    // =====================================================
+    // === MID-BOSS PATTERNS (distinct from main boss) ===
+    // =====================================================
+
+    // Stage 1 Mid-Boss: Slow cross-fire sweep + single aimed shot
+    midBoss1Phase1(boss: Boss, _dt: number) {
+        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 0.6) * 120;
+        // Slow horizontal cross-streams
+        if (boss.timer % 2.0 < 0.1) {
+            for (let i = -2; i <= 2; i++) {
+                boss.fireAngle(Math.PI / 2 + i * 0.25, 160, '#FF6600');
+            }
+        }
+        // Single aimed shot every 3s
+        if (boss.timer % 3.0 < 0.1) {
+            boss.fireAtPlayer(220);
+        }
+    }
+    midBoss1Phase2(boss: Boss, _dt: number) {
+        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 1.2) * 160;
+        // Rapid aimed shots with short intervals
+        if (boss.timer % 1.0 < 0.1) {
+            boss.fireAtPlayer(260);
+            boss.fireAtPlayer(240);
+        }
+        // Slow ring burst
+        if (boss.timer % 4.0 < 0.1) {
+            for (let i = 0; i < 8; i++) {
+                boss.fireAngle((Math.PI * 2 / 8) * i, 130, '#FF6600');
+            }
+        }
+    }
+
+    // Stage 2 Mid-Boss: Three-way spread, repositions side to side
+    midBoss2Phase1(boss: Boss, _dt: number) {
+        // Pendulum movement between sides
+        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 0.8) * 180;
+        if (boss.timer % 1.5 < 0.1) {
+            boss.fireAngle(Math.PI / 2 - 0.3, 200, '#00FF88');
+            boss.fireAngle(Math.PI / 2, 200, '#00FF88');
+            boss.fireAngle(Math.PI / 2 + 0.3, 200, '#00FF88');
+        }
+    }
+    midBoss2Phase2(boss: Boss, _dt: number) {
+        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 1.8) * 200;
+        // Wider 5-way burst
+        if (boss.timer % 1.0 < 0.1) {
+            for (let i = -2; i <= 2; i++) {
+                boss.fireAngle(Math.PI / 2 + i * 0.2, 240, '#00FF88');
+            }
+        }
+        // Aimed pursuit shot
+        if (boss.timer % 2.0 < 0.1) {
+            boss.fireAtPlayer(300);
+        }
+    }
+
+    // Stage 3 Mid-Boss: Ring burst on entry then constant aimed shots
+    midBoss3Phase1(boss: Boss, _dt: number) {
+        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.cos(boss.timer * 0.4) * 80;
+        // Ring burst every 3.5s
+        if (boss.timer % 3.5 < 0.1) {
+            for (let i = 0; i < 10; i++) {
+                boss.fireAngle((Math.PI * 2 / 10) * i, 180, '#AA00FF');
+            }
+        }
+        // Constant aimed shots
+        if (boss.timer % 1.2 < 0.1) {
+            boss.fireAtPlayer(280);
+        }
+    }
+    midBoss3Phase2(boss: Boss, _dt: number) {
+        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 2.0) * 140;
+        boss.y = 40 + Math.sin(boss.timer * 0.7) * 30;
+        // Double ring
+        if (boss.timer % 2.5 < 0.1) {
+            for (let i = 0; i < 8; i++) {
+                boss.fireAngle((Math.PI * 2 / 8) * i, 200, '#AA00FF');
+                boss.fireAngle((Math.PI * 2 / 8) * i + 0.2, 150, '#FF00AA');
+            }
+        }
+        if (boss.timer % 0.8 < 0.1) {
+            boss.fireAtPlayer(320);
+        }
+    }
+
+    // Stage 4 Mid-Boss: Zigzag movement + diagonal streams
+    midBoss4Phase1(boss: Boss, _dt: number) {
+        // Sharp zigzag
+        boss.x = (boss.engine.width / 2 - boss.width / 2) + (boss.timer % 2.0 < 1.0 ? 1 : -1) * 180;
+        boss.y = 30 + Math.sin(boss.timer * 1.5) * 30;
+        // Diagonal streams
+        if (boss.timer % 0.6 < 0.1) {
+            boss.fireAngle(Math.PI / 2 + 0.5, 280, '#FFFF00');
+            boss.fireAngle(Math.PI / 2 - 0.5, 280, '#FFFF00');
+        }
+    }
+    midBoss4Phase2(boss: Boss, _dt: number) {
+        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 3.0) * 200;
+        boss.y = 20 + Math.abs(Math.sin(boss.timer * 1.5)) * 60;
+        // Dense diagonal + aimed
+        if (boss.timer % 0.4 < 0.1) {
+            boss.fireAngle(Math.PI / 2 + 0.4, 300, '#FFFF00');
+            boss.fireAngle(Math.PI / 2 - 0.4, 300, '#FFFF00');
+            boss.fireAngle(Math.PI / 2 + 0.8, 240, '#FF8800');
+            boss.fireAngle(Math.PI / 2 - 0.8, 240, '#FF8800');
+        }
+        if (boss.timer % 1.5 < 0.1) {
+            boss.fireAtPlayer(350);
+        }
+    }
+
+    // Stage 5 Mid-Boss: Double-spiral + aimed homing bursts
+    midBoss5Phase1(boss: Boss, _dt: number) {
+        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 2.5) * 180;
+        boss.y = 40 + Math.cos(boss.timer * 1.8) * 40;
+        // Double-spiral
+        if (boss.timer % 0.12 < 0.06) {
+            const angle = boss.timer * 4;
+            boss.fireAngle(angle, 220, '#FF0088');
+            boss.fireAngle(angle + Math.PI, 220, '#0088FF');
+        }
+        if (boss.timer % 1.5 < 0.1) {
+            boss.fireAtPlayer(350);
+        }
+    }
+    midBoss5Phase2(boss: Boss, _dt: number) {
+        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 4) * 200;
+        boss.y = 20 + Math.abs(Math.cos(boss.timer * 3)) * 80;
+        // Triple spiral
+        if (boss.timer % 0.1 < 0.05) {
+            const angle = boss.timer * 5;
+            boss.fireAngle(angle, 260, '#FF0088');
+            boss.fireAngle(angle + Math.PI * 2 / 3, 260, '#FF0088');
+            boss.fireAngle(angle + Math.PI * 4 / 3, 260, '#FF0088');
+        }
+        // Rapid aimed burst every second
+        if (boss.timer % 0.9 < 0.1) {
+            boss.fireAtPlayer(400);
+            boss.fireAtPlayer(370);
         }
     }
 }

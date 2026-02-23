@@ -686,7 +686,7 @@ export class GameEngine {
                 const midBoss = new Boss(this, this.width / 2 - 64, -150, Math.max(1, this.stage - 1));
                 midBoss.isMidBoss = true;
                 midBoss.scoreValue = 3000;
-                // hp is already set in Boss constructor based on isMidBoss flag
+                midBoss.initPhases(); // Assigns stage-specific mid-boss patterns + recalcs HP
                 this.addEnemy(midBoss);
             }
 
