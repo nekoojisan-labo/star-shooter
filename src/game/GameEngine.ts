@@ -215,9 +215,8 @@ export class GameEngine {
                 const btnSize = 80;
                 const margin = 12;
                 const gaugeHeight = 36;
-                const gaugePadding = 8;
-                const safeBottom = 60;
-                const btnY = this.height - safeBottom - gaugeHeight - gaugePadding - btnSize - margin;
+                const gaugePadding = 20;
+                const btnY = this.height - gaugeHeight - gaugePadding - btnSize - margin;
 
                 const cx = touch.clientX;
                 const cy = touch.clientY;
@@ -240,8 +239,8 @@ export class GameEngine {
                     return; // Handled button, don't move
                 }
 
-                // Tapped on gauge area
-                if (touch.clientY > this.height - safeBottom - gaugeHeight - gaugePadding) {
+                // Tapped on gauge area (use same gaugePadding as draw)
+                if (touch.clientY > this.height - gaugeHeight - 20) {
                     if (!this.keys['x']) this.keysPressed['x'] = true;
                     this.keys['x'] = true;
                 } else {
@@ -897,8 +896,7 @@ export class GameEngine {
             }
 
             // ---- Draw Gradius Powerup Gauge ----
-            const safeBottom = this.isMobile ? 60 : 0;
-            const gaugeBottomMargin = this.isMobile ? (8 + safeBottom) : 0;
+            const gaugeBottomMargin = this.isMobile ? 20 : 0;
             const gaugeSlotHeight = this.isMobile ? 30 : 20;
             const maxSlotWidth = 80;
             let slotWidth = (this.width - 20) / POWERUP_SLOTS.length;
