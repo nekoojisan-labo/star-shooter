@@ -255,7 +255,8 @@ export class Boss extends Enemy {
         }
 
         // Mid-boss: 1990 base (-10% from 2210), Boss: 3790 base
-        this.hp = (this.isMidBoss ? 1990 : 3790) + bossType * 950;
+        // Mid-boss: 1790 base (-10% from 1990), Boss: 3790 base
+        this.hp = (this.isMidBoss ? 1790 : 3790) + bossType * 950;
         this.phaseDuration = 20 + Math.random() * 10;
         this.speedY = 100; // Entry speed
     }
@@ -367,8 +368,10 @@ export class Boss extends Enemy {
 
     // --- Helper Methods ---
     fireAngle(angle: number, speed: number, color: string = '#FF0055') {
-        const vx = Math.cos(angle) * speed;
-        const vy = Math.sin(angle) * speed;
+        // Mid-boss bullets travel 10% slower
+        const actualSpeed = this.isMidBoss ? speed * 0.9 : speed;
+        const vx = Math.cos(angle) * actualSpeed;
+        const vy = Math.sin(angle) * actualSpeed;
         // Adjust start position so it looks like it comes from the center of the boss
         const b = new EnemyBullet(this.engine, this.x + this.width / 2 - 8, this.y + this.height / 2, vx, vy);
         b.color = color;
