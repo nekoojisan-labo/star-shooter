@@ -577,7 +577,7 @@ export class GameEngine {
                             this.resetToTitle();
                         } else {
                             this.gameState = GameState.Playing;
-                            if (this.audioInitialized) audio.playBGM('stage' + Math.min(this.stage, 4));
+                            if (this.audioInitialized) audio.playBGM('stage' + Math.min(this.stage, 5));
                         }
                     } else {
                         // Skip text
@@ -624,20 +624,25 @@ export class GameEngine {
 
             const stage = this.stage;
             const rand = Math.random();
+            // Stage 4+: difficulty scales up 10% per stage beyond 3
+            // e.g. stage4=1.1x, stage5=1.2x — applied to formation sizes
+            const difficultyMult = stage >= 4 ? 1.0 + (stage - 3) * 0.1 : 1.0;
 
             if (rand < 0.25) {
                 // V-Formation: size and type scaled by stage
                 const centerX = Math.random() * (this.width - 120) + 60;
                 const type1 = stage >= 4 ? EnemyMotionType.Burster : EnemyMotionType.SineWave;
                 const type2 = stage >= 3 ? EnemyMotionType.Sniper : EnemyMotionType.SineWave;
-                const count = 3 + Math.floor(stage / 2); // 3-5 enemies
+                const baseCount = 3 + Math.floor(stage / 2);
+                const count = Math.round(baseCount * difficultyMult); // scaled
                 for (let i = 0; i < count; i++) {
                     this.addEnemy(new PatternEnemy(this, centerX + (i - Math.floor(count / 2)) * 40, -50 - i * 30, i === Math.floor(count / 2) ? type1 : type2));
                 }
             } else if (rand < 0.50) {
                 // Horizontal Line Formation: longer in later stages
                 const startX = Math.random() * (this.width - 240) + 40;
-                const count = 3 + Math.floor(stage / 2); // 3-5 enemies
+                const baseCount = 3 + Math.floor(stage / 2);
+                const count = Math.round(baseCount * difficultyMult);
                 const type = stage >= 3 ? EnemyMotionType.StopAndShoot : EnemyMotionType.Straight;
                 for (let i = 0; i < count; i++) {
                     this.addEnemy(new PatternEnemy(this, startX + i * 40, -50, type));
@@ -650,6 +655,9 @@ export class GameEngine {
                 this.addEnemy(new PatternEnemy(this, startX, -90, type));
                 if (stage >= 2) this.addEnemy(new PatternEnemy(this, startX, -130, type));
                 if (stage >= 4) this.addEnemy(new PatternEnemy(this, startX, -170, type));
+                // Stage 4+: extra enemy scaled by difficulty
+                if (stage >= 4 && difficultyMult >= 1.1) this.addEnemy(new PatternEnemy(this, startX, -210, type));
+                if (stage >= 5 && difficultyMult >= 1.2) this.addEnemy(new PatternEnemy(this, startX, -250, type));
             } else if (rand < 0.80) {
                 // Stage 2+: diagonal flankers
                 const type = stage >= 3 ? EnemyMotionType.Dive : EnemyMotionType.ZigZag;
@@ -658,6 +666,15 @@ export class GameEngine {
                 if (stage >= 3) {
                     this.addEnemy(new PatternEnemy(this, 120, -80, type));
                     this.addEnemy(new PatternEnemy(this, this.width - 160, -80, type));
+                }
+                // Stage 4+: extra flankers
+                if (stage >= 4) {
+                    this.addEnemy(new PatternEnemy(this, 200, -110, type));
+                    this.addEnemy(new PatternEnemy(this, this.width - 240, -110, type));
+                }
+                if (stage >= 5) {
+                    this.addEnemy(new PatternEnemy(this, 80, -140, type));
+                    this.addEnemy(new PatternEnemy(this, this.width - 120, -140, type));
                 }
             } else {
                 // Single Spawn or Pair (varied types based on stage)
@@ -675,6 +692,10 @@ export class GameEngine {
                 }
                 if (stage >= 4 && Math.random() > 0.5) {
                     this.addEnemy(new PatternEnemy(this, Math.random() * (this.width - 40), -110, motionType));
+                }
+                // Stage 5: guaranteed third enemy
+                if (stage >= 5) {
+                    this.addEnemy(new PatternEnemy(this, Math.random() * (this.width - 40), -150, motionType));
                 }
             }
 
@@ -898,7 +919,7 @@ export class GameEngine {
         this.powerups = [];
         this.speedItems = [];
         this.bossActive = false;
-        if (this.audioInitialized) audio.playBGM('stage' + Math.min(this.stage, 4));
+        if (this.audioInitialized) audio.playBGM('stage' + Math.min(this.stage, 5));
     }
 
     isAABB(a: Entity, b: Entity) {

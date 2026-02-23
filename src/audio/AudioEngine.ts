@@ -24,7 +24,7 @@ class AudioEngine {
             this.sfxGainNode.connect(this.ctx.destination);
 
             // プレロード
-            const bgms = ['stage1', 'stage2', 'stage3', 'stage4', 'clear1', 'clear2', 'boss_normal', 'boss_final', 'scenario', 'ending'];
+            const bgms = ['stage1', 'stage2', 'stage3', 'stage4', 'stage5', 'clear1', 'clear2', 'boss_normal', 'boss_final', 'scenario', 'ending'];
             bgms.forEach(bgm => this.loadBGM(bgm));
             for (let i = 0; i <= 5; i++) this.loadVoice(i);
         }
