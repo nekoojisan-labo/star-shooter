@@ -40,7 +40,7 @@ export class GameEngine {
     // Assets
     playerImage = new Image();
     enemyImage = new Image();
-    bossImages: HTMLImageElement[] = [];
+    bossImage = new Image();
     bgImages: HTMLImageElement[] = [];
     bulletBlueImage = new Image();
     bulletPinkImage = new Image();
@@ -72,6 +72,43 @@ export class GameEngine {
     bossActive: boolean = false;
     bombFlashTimer: number = 0;
 
+    scenarioTimer: number = 0;
+    titleImage: HTMLImageElement | null = null;
+    scenarioImages: HTMLImageElement[] = [];
+
+    scenarioTexts: string[][] = [
+        [
+            "西暦、21XX年。人類は未曾有の危機に直面していた。",
+            "突如として現れた機械生命体群が、銀河の各宙域を次々と制圧。",
+            "残された希望は、最新鋭戦闘機「スターシューター」のみ。",
+            "単機による敵中枢部への強襲作戦が、今始まろうとしている。"
+        ],
+        [
+            "前線基地の防衛部隊を突破した。だが、これは敵の大軍勢のほんの一部に過ぎない。",
+            "敵の補給線を断つため、アステロイド帯に築かれた採掘基地へと向かう。"
+        ],
+        [
+            "巨大アステロイド基地を沈黙させた。",
+            "敵の資源供給は絶たれたが、軌道上にはさらに巨大な要塞が待ち受けている。",
+            "これより惑星軌道空間へ突入し、軌道防衛網の突破を図る。"
+        ],
+        [
+            "軌道上の強固な防衛網を突破し、超巨大な敵空母群に接近した。",
+            "次々と飛来する迎撃機をかわし、巨大戦艦へと肉薄する。"
+        ],
+        [
+            "敵空母の沈めに成功した。残すは、敵母星の中枢に鎮座するマスターコアのみ。",
+            "すべての終わりにして、我々の未来を取り戻すための最後の戦い。",
+            "限界を突破し、決戦へ挑め。"
+        ]
+    ];
+    endingTexts: string[] = [
+        "マスターコアは沈黙し、機械生命体群は統制を失い活動を停止していく。",
+        "あなたの孤独な戦いにより、人類は再び平和な星空を取り戻した。",
+        "作戦完了、これより帰還する。",
+        "-- THANK YOU FOR PLAYING --"
+    ];
+
     // Touch Support
     touchActive: boolean = false;
     prevTouchX: number = 0;
@@ -85,49 +122,6 @@ export class GameEngine {
 
     cleanup: () => void;
 
-    // ----- Scenario Texts -----
-    scenarioTimer: number = 0;
-    currentScenarioTextIndex: number = 0;
-    scenarioTexts: string[][] = [
-        // Stage 0 -> 1 (Opening)
-        [
-            "西暦 21XX年。突如として飛来した機械生命体群により、",
-            "人類の拠点は次々と陥落した。",
-            "残された最後の希望は、未完成の試作型高機動戦闘機『スターシューター』のみ。",
-            "パイロットよ、全人類の未来は君の双肩に懸かっている。",
-            "出撃せよ。敵の防衛線を突破し、中枢『マスターコア』を破壊するのだ！"
-        ],
-        // Stage 1 -> 2
-        [
-            "前線基地の防衛部隊を突破した。",
-            "だが、これは敵の大軍勢のほんの一部に過ぎない。",
-            "敵の補給線を断つため、アステロイド帯に築かれた採掘基地へと向かう。"
-        ],
-        // Stage 2 -> 3
-        [
-            "小惑星基地を破壊し、敵の資源供給を絶った。進路はクリアだ。",
-            "次なる標的は、惑星軌道上に浮かぶ強固な軍事要塞である。"
-        ],
-        // Stage 3 -> 4
-        [
-            "堅牢な要塞のコアを沈めた。敵の防衛網に完全に穴が開いた。",
-            "敵は急遽、高速空母を派遣しこちらの迎撃に出た模様。",
-            "部隊を振り切り、敵母星へと突入せよ。"
-        ],
-        // Stage 4 -> 5
-        [
-            "敵の精鋭機動部隊を退けた。",
-            "遂に敵母星の中枢『マスターコア』が眼前にある。",
-            "すべての元凶を断ち切るため、最終ミッションへ移行する。生きて帰るぞ。"
-        ]
-    ];
-    endingTexts: string[] = [
-        "マスターコアは沈黙し、機械生命体群は統制を失い活動を停止していく。",
-        "あなたの孤独な戦いにより、人類は再び平和な星空を取り戻した。",
-        "作戦完了、これより帰還する。",
-        "-- THANK YOU FOR PLAYING --"
-    ];
-
     async loadAssets() {
         for (let i = 1; i <= 3; i++) {
             this.bgImages[i] = await processSprite({
@@ -135,6 +129,15 @@ export class GameEngine {
             });
         }
         this.bgImages[0] = this.bgImages[1]; // fallback
+
+        // Load title background and scenario images
+        this.titleImage = new Image();
+        this.titleImage.src = `${import.meta.env.BASE_URL}assets/title_bg.png`;
+        for (let i = 0; i <= 5; i++) {
+            const img = new Image();
+            img.src = `${import.meta.env.BASE_URL}assets/scene_${i}.png`;
+            this.scenarioImages.push(img);
+        }
 
         this.playerImage = await processSprite({
             src: `${import.meta.env.BASE_URL}assets/player.png`,
@@ -145,14 +148,12 @@ export class GameEngine {
             src: `${import.meta.env.BASE_URL}assets/enemies.png`,
             removeBg: true
         });
-        for (let i = 1; i <= 5; i++) {
-            this.bossImages[i] = await processSprite({
-                src: `${import.meta.env.BASE_URL}assets/boss_${i}.png`,
-                crop: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
-                removeBg: true,
-                rotate180: true
-            });
-        }
+        this.bossImage = await processSprite({
+            src: `${import.meta.env.BASE_URL}assets/boss.png`,
+            crop: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
+            removeBg: true,
+            rotate180: true
+        });
 
         this.bulletBlueImage = await processSprite({ src: `${import.meta.env.BASE_URL}assets/bullet_blue.png`, removeBg: true });
         this.bulletPinkImage = await processSprite({ src: `${import.meta.env.BASE_URL}assets/bullet_pink.png`, removeBg: true });
@@ -332,14 +333,20 @@ export class GameEngine {
 
     update(dt: number) {
         if (this.gameState === GameState.Title) {
-            if (this.keysPressed['Enter'] || this.keysPressed[' ']) {
+            if (this.keysPressed['Enter']) {
                 if (!this.audioInitialized) {
                     audio.init();
                     this.audioInitialized = true;
                 }
+                this.stage = 1;
                 this.resetGame('new');
-                this.gameState = GameState.Playing;
-            } else if (this.keysPressed['Shift']) {
+                this.gameState = GameState.Scenario;
+                this.scenarioTimer = 0;
+                if (this.audioInitialized) {
+                    audio.playBGM('scenario');
+                    audio.playVoice(0);
+                }
+            } else if (this.keysPressed['c']) {
                 this.gameState = GameState.Config;
                 this.configSelection = 0;
             }
@@ -406,15 +413,22 @@ export class GameEngine {
 
             if (this.keysPressed['Enter']) {
                 if (this.stage >= 5) {
-                    // Start Ending
+                    this.stage = 6;
                     this.gameState = GameState.Scenario;
                     this.scenarioTimer = 0;
-                    this.currentScenarioTextIndex = 0;
+                    if (this.audioInitialized) {
+                        audio.playBGM('ending');
+                        audio.playVoice(5);
+                    }
                 } else {
                     this.stage++;
+                    this.resetGame('nextStage');
                     this.gameState = GameState.Scenario;
                     this.scenarioTimer = 0;
-                    this.currentScenarioTextIndex = 0;
+                    if (this.audioInitialized) {
+                        audio.playBGM('scenario');
+                        audio.playVoice(this.stage - 1);
+                    }
                 }
             }
             this.keysPressed = {};
@@ -423,17 +437,19 @@ export class GameEngine {
 
         if (this.gameState === GameState.Scenario) {
             this.scenarioTimer += dt;
-
-            // Wait a bit before allowing skip, or fast forward text
-            if (this.scenarioTimer > 0.5 && this.keysPressed['Enter']) {
-                this.scenarioTimer = 999; // fast forward text or skip
-
-                if (this.scenarioTimer > 1.0) { // Require press again to skip page
-                    if (this.stage > 5) {
-                        this.resetToTitle(); // Ending finished
+            const lines = this.stage >= 6 ? this.endingTexts : this.scenarioTexts[this.stage - 1];
+            if (lines) {
+                if (this.keysPressed['Enter']) {
+                    if (this.scenarioTimer > lines.length * 1.5 + 1.0) {
+                        if (this.stage >= 6) {
+                            this.resetToTitle();
+                        } else {
+                            this.gameState = GameState.Playing;
+                            if (this.audioInitialized) audio.playBGM('stage' + Math.min(this.stage, 4));
+                        }
                     } else {
-                        this.resetGame(this.stage === 1 ? 'new' : 'nextStage');
-                        this.gameState = GameState.Playing;
+                        // Skip text
+                        this.scenarioTimer = lines.length * 1.5 + 1.1;
                     }
                 }
             }
@@ -507,15 +523,13 @@ export class GameEngine {
             // Mid boss trigger
             if (this.stageTimer >= this.midBossTime && !this.midBossSpawned && !this.bossActive) {
                 this.bossActive = true;
+                if (this.audioInitialized) audio.playBGM('boss_normal');
                 this.midBossSpawned = true;
 
                 const midBoss = new Boss(this, this.width / 2 - 64, -150, Math.max(1, this.stage - 1));
                 midBoss.isMidBoss = true;
                 midBoss.scoreValue = 3000;
-                const baseHp = 150 * this.stage;
-                midBoss.phases = midBoss.phases.slice(0, 2);
-                midBoss.phases[0].hp = baseHp;
-                if (midBoss.phases[1]) midBoss.phases[1].hp = baseHp * 1.5;
+                midBoss.phases.forEach(p => p.hp = p.hp * 0.5);
                 midBoss.hp = midBoss.phases[0].hp;
                 this.addEnemy(midBoss);
             }
@@ -524,6 +538,7 @@ export class GameEngine {
             // Wait slightly after stageBossTime to ensure the mid-boss is well clear if delayed
             if (this.stageTimer >= this.stageBossTime && !this.bossActive && this.midBossSpawned) {
                 this.bossActive = true;
+                if (this.audioInitialized) audio.playBGM(this.stage === 5 ? 'boss_final' : 'boss_normal');
                 this.addEnemy(new Boss(this, this.width / 2 - 64, -150, this.stage));
             }
         }
@@ -720,7 +735,7 @@ export class GameEngine {
         this.powerups = [];
         this.speedItems = [];
         this.bossActive = false;
-        if (this.audioInitialized) audio.playBGM(this.stage);
+        if (this.audioInitialized) audio.playBGM('stage' + Math.min(this.stage, 4));
     }
 
     isAABB(a: Entity, b: Entity) {
@@ -1027,6 +1042,14 @@ export class GameEngine {
 
         const lines = this.stage > 5 ? this.endingTexts : this.scenarioTexts[this.stage ? this.stage - 1 : 0];
         if (!lines) return;
+
+        // Optional picture bg rendering behind the dark overlay
+        const sceneImg = this.stage > 5 ? this.scenarioImages[5] : this.scenarioImages[this.stage ? this.stage - 1 : 0];
+        if (sceneImg && sceneImg.naturalWidth > 0 && this.scenarioTimer < lines.length * 1.5 + 1.0) {
+            this.ctx.globalAlpha = 0.5; // Let the underlying art show lightly
+            this.ctx.drawImage(sceneImg, 0, 0, this.width, this.height);
+            this.ctx.globalAlpha = 1.0;
+        }
 
         this.ctx.font = 'bold 20px "Courier New"';
         this.ctx.textAlign = 'center';

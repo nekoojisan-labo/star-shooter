@@ -3,7 +3,8 @@ class AudioEngine {
     private bgmGainNode: GainNode | null = null;
     private sfxGainNode: GainNode | null = null;
     private bgmBuffers: { [key: string]: AudioBuffer } = {};
-    private bgmSource: AudioBufferSourceNode | null = null;
+    private voiceBuffers: AudioBuffer[] = [];
+    private currentBgmTrack: { source: AudioBufferSourceNode, gain: GainNode, name: string } | null = null;
     private requestedBGM: string | null = null;
 
     // Default volumes (0.0 to 1.0)
@@ -23,26 +24,40 @@ class AudioEngine {
             this.sfxGainNode.connect(this.ctx.destination);
 
             // プレロード
-            this.loadBGM('stage1');
-            this.loadBGM('stage2');
-            this.loadBGM('stage3');
-            this.loadBGM('boss');
+            const bgms = ['stage1', 'stage2', 'stage3', 'stage4', 'clear1', 'clear2', 'boss_normal', 'boss_final', 'scenario', 'ending'];
+            bgms.forEach(bgm => this.loadBGM(bgm));
+            for (let i = 0; i <= 5; i++) this.loadVoice(i);
         }
     }
 
     async loadBGM(name: string) {
         if (!this.ctx) return;
         try {
-            const response = await fetch(`${import.meta.env.BASE_URL}assets/${name}.wav`);
+            // Updated to load MP3 files based on the newly mapped assets
+            const path = name.startsWith('bgm_') ? `${name}.mp3` : `bgm_${name}.mp3`;
+            const response = await fetch(`${import.meta.env.BASE_URL}assets/${path}`);
             if (response.ok) {
                 const arrayBuffer = await response.arrayBuffer();
                 this.bgmBuffers[name] = await this.ctx.decodeAudioData(arrayBuffer);
-                if (this.requestedBGM === name || this.requestedBGM === `stage${name}` || name.includes(this.requestedBGM || '')) {
-                    this.playBGM(this.requestedBGM as string);
+                if (this.requestedBGM === name) {
+                    this.playBGM(name);
                 }
             }
         } catch (e) {
             console.error("Error loading BGM:", name, e);
+        }
+    }
+
+    async loadVoice(index: number) {
+        if (!this.ctx) return;
+        try {
+            const response = await fetch(`${import.meta.env.BASE_URL}assets/voice_${index}.m4a`);
+            if (response.ok) {
+                const arrayBuffer = await response.arrayBuffer();
+                this.voiceBuffers[index] = await this.ctx.decodeAudioData(arrayBuffer);
+            }
+        } catch (e) {
+            console.error("Error loading Voice:", index, e);
         }
     }
 
@@ -148,29 +163,75 @@ class AudioEngine {
         osc.stop(now + 0.15);
     }
 
-    // 用意したBGM(.wav)のループ再生
-    playBGM(stage: number | string) {
+    // ナレーション音声再生（再生中はBGMをダッキングする）
+    playVoice(index: number) {
+        if (!this.ctx || !this.sfxGainNode || !this.bgmGainNode) return;
+        const buffer = this.voiceBuffers[index];
+        if (!buffer) return;
+
+        const source = this.ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(this.sfxGainNode);
+
+        const now = this.ctx.currentTime;
+        this.bgmGainNode.gain.cancelScheduledValues(now);
+        this.bgmGainNode.gain.setValueAtTime(this.bgmGainNode.gain.value, now);
+        this.bgmGainNode.gain.linearRampToValueAtTime(this.bgmVolume * 0.2, now + 0.5);
+
+        source.onended = () => {
+            if (!this.ctx || !this.bgmGainNode) return;
+            const endNow = this.ctx.currentTime;
+            this.bgmGainNode.gain.cancelScheduledValues(endNow);
+            this.bgmGainNode.gain.setValueAtTime(this.bgmGainNode.gain.value, endNow);
+            this.bgmGainNode.gain.linearRampToValueAtTime(this.bgmVolume, endNow + 1.0);
+        };
+
+        source.start(0);
+    }
+
+    // 用意したBGM(.mp3)のクロスフェードループ再生
+    playBGM(name: string, crossfadeDuration: number = 2.0) {
         if (!this.ctx || !this.bgmGainNode) return;
-        this.stopBGM();
 
-        const name = typeof stage === 'number' ? `stage${stage}` : stage;
+        const buffer = this.bgmBuffers[name];
+        if (!buffer) {
+            this.requestedBGM = name;
+            return;
+        }
+
+        if (this.currentBgmTrack && this.currentBgmTrack.name === name) return; // Already playing
+
+        const now = this.ctx.currentTime;
+
+        // Fade out current track
+        if (this.currentBgmTrack) {
+            const oldTrack = this.currentBgmTrack;
+            oldTrack.gain.gain.cancelScheduledValues(now);
+            oldTrack.gain.gain.setValueAtTime(oldTrack.gain.gain.value, now);
+            oldTrack.gain.gain.linearRampToValueAtTime(0, now + crossfadeDuration);
+            setTimeout(() => {
+                try { oldTrack.source.stop(); } catch (e) { }
+                oldTrack.source.disconnect();
+                oldTrack.gain.disconnect();
+            }, crossfadeDuration * 1000 + 100);
+        }
+
+        // Setup new track
+        const newSource = this.ctx.createBufferSource();
+        newSource.buffer = buffer;
+        newSource.loop = true;
+
+        const newGain = this.ctx.createGain();
+        newGain.gain.setValueAtTime(0, now);
+        newGain.gain.linearRampToValueAtTime(1.0, now + crossfadeDuration);
+
+        newSource.connect(newGain);
+        newGain.connect(this.bgmGainNode);
+
+        newSource.start(0);
+
+        this.currentBgmTrack = { source: newSource, gain: newGain, name };
         this.requestedBGM = name;
-        const buffer = this.bgmBuffers[name] || this.bgmBuffers['stage1'];
-
-        if (!buffer) return; // まだロードされていなければ何もしない（ロード完了時に requestedBGM が一致すれば再生される）
-
-        this.bgmSource = this.ctx.createBufferSource();
-        this.bgmSource.buffer = buffer;
-        this.bgmSource.loop = true;
-
-        // ステージが進むごとに少しずつ再生速度(ピッチ)を上げて焦燥感を煽る
-        const pitchStage = typeof stage === 'number' ? stage : 1;
-        this.bgmSource.playbackRate.value = 1.0 + (pitchStage - 1) * 0.05;
-
-        // Adjust this track's relative volume if needed, otherwise connect directly to BGM gain
-        this.bgmSource.connect(this.bgmGainNode);
-
-        this.bgmSource.start(0);
     }
 
     // ステージクリア時のファンファーレ
@@ -199,16 +260,22 @@ class AudioEngine {
         osc.stop(now + 2.0);
     }
 
-    stopBGM() {
-        if (this.bgmSource) {
-            try {
-                this.bgmSource.stop();
-            } catch (e) {
-                // ignoring error if already stopped
-            }
-            this.bgmSource.disconnect();
-            this.bgmSource = null;
-        }
+    stopBGM(fadeOutDuration: number = 1.0) {
+        if (!this.ctx || !this.currentBgmTrack) return;
+        const now = this.ctx.currentTime;
+        const track = this.currentBgmTrack;
+
+        track.gain.gain.cancelScheduledValues(now);
+        track.gain.gain.setValueAtTime(track.gain.gain.value, now);
+        track.gain.gain.linearRampToValueAtTime(0, now + fadeOutDuration);
+
+        setTimeout(() => {
+            try { track.source.stop(); } catch (e) { }
+            track.source.disconnect();
+            track.gain.disconnect();
+        }, fadeOutDuration * 1000 + 100);
+
+        this.currentBgmTrack = null;
     }
 }
 

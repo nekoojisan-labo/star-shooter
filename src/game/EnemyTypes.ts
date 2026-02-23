@@ -319,7 +319,7 @@ export class Boss extends Enemy {
     }
 
     draw(ctx: CanvasRenderingContext2D) {
-        const img = this.engine.bossImages[this.bossType] || this.engine.bossImages[1];
+        const img = this.engine.bossImage;
         if (img && img.complete && img.naturalWidth > 0) {
             ctx.save();
             ctx.translate(this.x + this.width / 2, this.y + this.height / 2);

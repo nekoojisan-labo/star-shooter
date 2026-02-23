@@ -96,7 +96,7 @@ export class Player extends Entity {
         if (isShooting) {
             if (!this.engine.audioInitialized) {
                 audio.init();
-                audio.playBGM(this.engine.stage);
+                audio.playBGM('stage' + Math.min(this.engine.stage, 4));
                 this.engine.audioInitialized = true;
             }
             if (this.shotTimer <= 0) {
