@@ -24,6 +24,7 @@ interface ParallaxStar {
 }
 
 export class GameEngine {
+    canvas: HTMLCanvasElement;
     ctx: CanvasRenderingContext2D;
     width: number;
     height: number;
@@ -78,36 +79,37 @@ export class GameEngine {
     titleImage: HTMLImageElement | null = null;
     bossImages: HTMLImageElement[] = [];
     scenarioImages: HTMLImageElement[] = [];
+    assetsLoaded: boolean = false;
 
     scenarioTexts: string[][] = [
         [
-            "西暦、21XX年。人類は未曾有の危機に直面していた。",
-            "突如として現れた機械生命体群が、銀河の各宙域を次々と制圧。",
-            "残された希望は、最新鋭戦闘機「スターシューター」のみ。",
-            "単機による敵中枢部への強襲作戦が、今始まろうとしている。"
+            "西暦、21XX年。\n人類は未曾有の危機に直面していた。",
+            "突如として現れた機械生命体群が、\n銀河の各宙域を次々と制圧。",
+            "残された希望は、\n最新鋭戦闘機「スターシューター」のみ。",
+            "単機による敵中枢部への強襲作戦が、\n今始まろうとしている。"
         ],
         [
-            "前線基地の防衛部隊を突破した。だが、これは敵の大軍勢のほんの一部に過ぎない。",
-            "敵の補給線を断つため、アステロイド帯に築かれた採掘基地へと向かう。"
+            "前線基地の防衛部隊を突破した。\nだが、これは敵の大軍勢のほんの一部に過ぎない。",
+            "敵の補給線を断つため、\nアステロイド帯に築かれた採掘基地へと向かう。"
         ],
         [
             "巨大アステロイド基地を沈黙させた。",
-            "敵の資源供給は絶たれたが、軌道上にはさらに巨大な要塞が待ち受けている。",
-            "これより惑星軌道空間へ突入し、軌道防衛網の突破を図る。"
+            "敵の資源供給は絶たれたが、\n軌道上にはさらに巨大な要塞が待ち受けている。",
+            "これより惑星軌道空間へ突入し、\n軌道防衛網の突破を図る。"
         ],
         [
-            "軌道上の強固な防衛網を突破し、超巨大な敵空母群に接近した。",
-            "次々と飛来する迎撃機をかわし、巨大戦艦へと肉薄する。"
+            "軌道上の強固な防衛網を突破し、\n超巨大な敵空母群に接近した。",
+            "次々と飛来する迎撃機をかわし、\n巨大戦艦へと肉薄する。"
         ],
         [
-            "敵空母の沈めに成功した。残すは、敵母星の中枢に鎮座するマスターコアのみ。",
-            "すべての終わりにして、我々の未来を取り戻すための最後の戦い。",
+            "敵空母の撃沈に成功した。\n残すは、敵母星の中枢に鎮座するマスターコアのみ。",
+            "すべての終わりにして、\n我々の未来を取り戻すための最後の戦い。",
             "限界を突破し、決戦へ挑め。"
         ]
     ];
     endingTexts: string[] = [
-        "マスターコアは沈黙し、機械生命体群は統制を失い活動を停止していく。",
-        "あなたの孤独な戦いにより、人類は再び平和な星空を取り戻した。",
+        "マスターコアは沈黙し、\n機械生命体群は統制を失い活動を停止していく。",
+        "あなたの孤独な戦いにより、\n人類は再び平和な星空を取り戻した。",
         "作戦完了、これより帰還する。",
         "-- THANK YOU FOR PLAYING --"
     ];
@@ -125,7 +127,22 @@ export class GameEngine {
 
     cleanup: () => void;
 
+    /** Promise-based image loader with 5s timeout fallback */
+    private loadImage(src: string): Promise<HTMLImageElement> {
+        return new Promise((resolve) => {
+            const img = new Image();
+            const timer = setTimeout(() => {
+                console.warn(`Image load timeout: ${src}`);
+                resolve(img); // resolve even on timeout to not block everything
+            }, 5000);
+            img.onload = () => { clearTimeout(timer); resolve(img); };
+            img.onerror = () => { clearTimeout(timer); console.warn(`Failed to load: ${src}`); resolve(img); };
+            img.src = src;
+        });
+    }
+
     async loadAssets() {
+        // Background images (sequential because processSprite does canvas processing)
         for (let i = 1; i <= 3; i++) {
             this.bgImages[i] = await processSprite({
                 src: `${import.meta.env.BASE_URL}assets/bg_stage${i}.png`,
@@ -133,14 +150,15 @@ export class GameEngine {
         }
         this.bgImages[0] = this.bgImages[1]; // fallback
 
-        // Load title background and scenario images
-        this.titleImage = new Image();
-        this.titleImage.src = `${import.meta.env.BASE_URL}assets/title_bg.png`;
-        for (let i = 0; i <= 5; i++) {
-            const img = new Image();
-            img.src = `${import.meta.env.BASE_URL}assets/scene_${i}.png`;
-            this.scenarioImages.push(img);
-        }
+        // Title and scenario images — load in parallel, await all
+        const [titleImg, ...sceneImgs] = await Promise.all([
+            this.loadImage(`${import.meta.env.BASE_URL}assets/title_bg.png`),
+            ...Array.from({ length: 6 }, (_, i) =>
+                this.loadImage(`${import.meta.env.BASE_URL}assets/scene_${i}.png`)
+            ),
+        ]);
+        this.titleImage = titleImg;
+        this.scenarioImages = sceneImgs;
 
         this.playerImage = await processSprite({
             src: `${import.meta.env.BASE_URL}assets/player.png`,
@@ -169,14 +187,18 @@ export class GameEngine {
         this.bulletBlueImage = await processSprite({ src: `${import.meta.env.BASE_URL}assets/bullet_blue.png`, removeBg: true });
         this.bulletPinkImage = await processSprite({ src: `${import.meta.env.BASE_URL}assets/bullet_pink.png`, removeBg: true });
         this.bulletOrangeImage = await processSprite({ src: `${import.meta.env.BASE_URL}assets/bullet_orange.png`, removeBg: true });
+
+        this.assetsLoaded = true;
     }
 
-    constructor(ctx: CanvasRenderingContext2D, width: number, height: number) {
+    constructor(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, width: number, height: number) {
+        this.canvas = canvas;
         this.ctx = ctx;
         this.width = width;
         this.height = height;
 
-        this.loadAssets();
+        // NOTE: loadAssets() is NOT called here.
+        // It must be awaited externally (in GameCanvas) before starting the game loop.
 
         this.player = new Player(this, width / 2 - 24, height - 100);
 
@@ -228,15 +250,21 @@ export class GameEngine {
                 const touch = e.touches[0];
                 const now = Date.now();
 
-                // Mobile button layout
+                // Normalize touch coordinates to canvas pixel space
+                // (clientX/Y uses CSS coords which may differ from canvas drawing coords on mobile)
+                const rect = this.canvas.getBoundingClientRect();
+                const scaleX = this.canvas.width / rect.width;
+                const scaleY = this.canvas.height / rect.height;
+                const cx = (touch.clientX - rect.left) * scaleX;
+                const cy = (touch.clientY - rect.top) * scaleY;
+
+                // Mobile button layout (must match draw values exactly)
                 const btnSize = 80;
                 const margin = 12;
                 const gaugeHeight = 36;
-                const gaugePadding = 20;
-                const btnY = this.height - gaugeHeight - gaugePadding - btnSize - margin;
-
-                const cx = touch.clientX;
-                const cy = touch.clientY;
+                const gaugePadding = 8;
+                const safeBottom = 60;
+                const btnY = this.height - safeBottom - gaugeHeight - gaugePadding - btnSize - margin;
 
                 // Check if touched the Bomb button (bottom left, above gauge)
                 const bombX = margin;
@@ -256,8 +284,8 @@ export class GameEngine {
                     return; // Handled button, don't move
                 }
 
-                // Tapped on gauge area (use same gaugePadding as draw)
-                if (touch.clientY > this.height - gaugeHeight - 20) {
+                // Tapped on gauge area
+                if (cy > this.height - gaugeHeight - 20) {
                     if (!this.keys['x']) this.keysPressed['x'] = true;
                     this.keys['x'] = true;
                 } else {
@@ -1272,37 +1300,102 @@ export class GameEngine {
         const lines = this.stage > 5 ? this.endingTexts : this.scenarioTexts[this.stage ? this.stage - 1 : 0];
         if (!lines) return;
 
-        // Optional picture bg rendering behind the dark overlay
+        // Optional picture bg
         const sceneImg = this.stage > 5 ? this.scenarioImages[5] : this.scenarioImages[this.stage ? this.stage - 1 : 0];
         if (sceneImg && sceneImg.naturalWidth > 0 && this.scenarioTimer < lines.length * 1.5 + 1.0) {
-            this.ctx.globalAlpha = 0.5; // Let the underlying art show lightly
+            this.ctx.globalAlpha = 0.5;
             this.ctx.drawImage(sceneImg, 0, 0, this.width, this.height);
             this.ctx.globalAlpha = 1.0;
         }
 
-        this.ctx.font = 'bold 20px "Courier New"';
+        // Use a safe maxLineWidth with generous margin
+        const maxLineWidth = this.width - 60;
+
+        // wrapLine: character-level wrap (fallback only for lines still too wide)
+        const wrapLine = (line: string): string[] => {
+            if (!line) return [''];
+            const chunks: string[] = [];
+            let current = '';
+            for (const ch of line.split('')) {
+                const test = current + ch;
+                if (this.ctx.measureText(test).width > maxLineWidth && current.length > 0) {
+                    chunks.push(current);
+                    current = ch;
+                } else {
+                    current = test;
+                }
+            }
+            if (current) chunks.push(current);
+            return chunks.length > 0 ? chunks : [line];
+        };
+
+        // expandLine: split on \n first (contextual breaks), then char-wrap each sub-line
+        const expandLine = (line: string): string[] => {
+            const result: string[] = [];
+            for (const sub of line.split('\n')) {
+                result.push(...wrapLine(sub));
+            }
+            return result;
+        };
+
+        // ----- PRE-PASS: count total rows for layout -----
+        // Use a mid-size font for measurement (will be refined below)
+        this.ctx.font = `bold 16px "Courier New"`;
+        let totalRows = 0;
+        for (const line of lines) {
+            totalRows += expandLine(line).length;
+        }
+
+        // ----- LAYOUT -----
+        const maxTextHeight = this.height * 0.72;
+        const minFontSize = 11;
+        const maxFontSize = 20;
+        const minSpacing = 20;
+        const maxSpacing = 34;
+
+        let lineSpacing = Math.min(maxSpacing, Math.floor(maxTextHeight / Math.max(totalRows, 1)));
+        lineSpacing = Math.max(minSpacing, lineSpacing);
+        const fontSize = Math.max(minFontSize, Math.min(maxFontSize, lineSpacing - 8));
+
+        this.ctx.font = `bold ${fontSize}px "Courier New"`;
         this.ctx.textAlign = 'center';
         this.ctx.fillStyle = 'white';
 
-        const lineSpacing = 35;
-        const startY = this.height / 2 - (lines.length * lineSpacing) / 2;
+        const totalTextH = totalRows * lineSpacing;
+        const startY = Math.max(
+            this.height * 0.12 + lineSpacing / 2,
+            this.height / 2 - totalTextH / 2 + lineSpacing / 2
+        );
 
+        // ----- DRAW: typewriter reveal -----
+        let drawRow = 0;
         for (let i = 0; i < lines.length; i++) {
-            // Reveal text based on timer (1 line per 1.5 seconds)
             const revealTime = i * 1.5;
+            const fullExpanded = expandLine(lines[i]);
             if (this.scenarioTimer > revealTime) {
-                const timeInLine = this.scenarioTimer - revealTime;
-                const charsToShow = Math.floor(timeInLine * 25); // ~25 chars per sec
-                const text = lines[i].substring(0, charsToShow);
-                this.ctx.fillText(text, this.width / 2, startY + i * lineSpacing);
+                const charsToShow = Math.floor((this.scenarioTimer - revealTime) * 25);
+                const partial = lines[i].substring(0, charsToShow);
+                const expanded = expandLine(partial);
+                for (const wline of expanded) {
+                    const y = startY + drawRow * lineSpacing;
+                    if (y < this.height - 60) {
+                        this.ctx.fillText(wline, this.width / 2, y);
+                    }
+                    drawRow++;
+                }
+                // Reserve rows for the not-yet-revealed portion of this logical line
+                drawRow += fullExpanded.length - expanded.length;
+            } else {
+                drawRow += fullExpanded.length;
             }
         }
 
-        // Blinking skip prompt when all text is finished rendering
+        // Blinking skip prompt
         if (this.scenarioTimer > lines.length * 1.5 + 1.0) {
             if (Math.floor(this.scenarioTimer * 2) % 2 === 0) {
                 this.ctx.fillStyle = '#AAAAAA';
-                this.ctx.fillText('PRESS ENTER TO CONTINUE', this.width / 2, this.height - 50);
+                this.ctx.font = `bold 14px "Courier New"`;
+                this.ctx.fillText('PRESS ENTER / TAP TO CONTINUE', this.width / 2, this.height - 40);
             }
         }
     }
