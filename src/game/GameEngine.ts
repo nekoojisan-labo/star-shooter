@@ -38,6 +38,7 @@ export class GameEngine {
     stageBossTime: number = 100;
     midBossTime: number = 45;
     midBossSpawned: boolean = false;
+    bossAddTimer: number = 6; // popcorn trickle interval during boss fights
 
     stars: ParallaxStar[] = [];
 
@@ -748,6 +749,24 @@ export class GameEngine {
             }
         }
 
+        // During boss fights, trickle in light popcorn waves so the player has
+        // some powerup income (without it, a player who died mid-fight was
+        // stuck at Lv1 with no recovery path until the boss died).
+        if (this.bossActive) {
+            const bossDying = this.enemies.some(e => e instanceof Boss && e.dyingTimer > 0);
+            this.bossAddTimer -= dt;
+            if (this.bossAddTimer <= 0 && !bossDying) {
+                this.bossAddTimer = 7;
+                const x = Math.random() * (this.width - 144) + 40;
+                this.addEnemy(new PatternEnemy(this, x, -50, EnemyMotionType.SineWave));
+                if (this.stage >= 3) {
+                    this.addEnemy(new PatternEnemy(this, this.width - x - 64, -100, EnemyMotionType.Straight));
+                }
+            }
+        } else {
+            this.bossAddTimer = 6; // grace period before the first add wave
+        }
+
         this.player.update(dt);
         this.bullets.forEach(b => b.update(dt));
         this.enemyBullets.forEach(b => b.update(dt));
@@ -763,21 +782,25 @@ export class GameEngine {
         this.powerups = this.powerups.filter(p => p.active);
         this.speedItems = this.speedItems.filter(s => s.active);
 
-        this.checkCollisions();
+        this.checkCollisions(dt);
 
         // edge keys clear at end of frame
         this.keysPressed = {};
     }
 
-    checkCollisions() {
+    checkCollisions(dt: number) {
         // Bullet hits Enemy
         for (const b of this.bullets) {
             for (const e of this.enemies) {
                 if (b.active && e.active && this.isAABB(b, e)) {
                     if (!b.pierces) {
                         b.active = false;
+                        e.hit(b.damage);
+                    } else {
+                        // Piercing bullets (laser) hit every frame — normalize
+                        // to a 60fps baseline so DPS is frame-rate independent
+                        e.hit(b.damage * dt * 60);
                     }
-                    e.hit(b.damage);
                 }
             }
         }
@@ -785,7 +808,10 @@ export class GameEngine {
         // Player hits Enemy
         for (const e of this.enemies) {
             if (e.active && this.isAABB(this.player, e)) {
-                e.hit(100);
+                // Contact damage is applied every overlapping frame — dt-normalize
+                // it (150/s) so bosses can't be melted by parking on them.
+                // Still one-shots popcorn (hp 2) in a single 60fps frame.
+                e.hit(150 * dt);
                 if (this.gameState === GameState.StageClear) return; // Prevent double-KO game over when hitting boss
 
                 if (this.player.barrierHp > 0) {
@@ -822,11 +848,16 @@ export class GameEngine {
             if (!e.active) continue;
             for (const bit of this.player.bits) {
                 if (this.isAABB(bit, e)) {
-                    // Massive damage similar to bomb or direct body hit
-                    e.hit(100);
-                    // Do not destroy the bit here so it acts as a perm shield,
-                    // but add visual feedback
-                    for (let i = 0; i < 5; i++) this.addParticle(new Particle(this, e.x + e.width / 2, e.y + e.height / 2));
+                    // dt-normalized contact damage (150/s): instant vs popcorn,
+                    // but no longer 6000 DPS vs bosses (100/frame melted the
+                    // rebalanced bosses in under a second of bit contact)
+                    e.hit(150 * dt);
+                    // Do not destroy the bit here so it acts as a perm shield.
+                    // Visual feedback is throttled — sustained boss contact at
+                    // 5 particles/frame was ~300 particles/sec of spam.
+                    if (Math.random() < 0.15) {
+                        for (let i = 0; i < 5; i++) this.addParticle(new Particle(this, e.x + e.width / 2, e.y + e.height / 2));
+                    }
                     break;
                 }
             }
@@ -884,7 +915,18 @@ export class GameEngine {
         }
 
         this.lives -= 1;
+        // Death penalty: lose levels, bits, shield and speed — but keep the
+        // weapon TYPE at Lv1 (and homing at Lv1 if owned). A full reset to
+        // Normal Lv1 (16.7 DPS) made post-death boss fights a 2-4 minute
+        // stalemate with no powerup income.
+        const prevType = this.player.weapon.type;
+        const hadHoming = this.player.weapon.hasHoming;
         this.player.weapon = new WeaponState();
+        this.player.weapon.type = prevType;
+        if (hadHoming) {
+            this.player.weapon.hasHoming = true;
+            this.player.weapon.homingLevel = 1;
+        }
         this.player.bits = [];
         this.player.barrierHp = 0;
         this.player.speedLevel = 0;

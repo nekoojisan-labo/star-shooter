@@ -212,8 +212,11 @@ export class Boss extends Enemy {
     currentPhase: number = 0;
     dyingTimer: number = 0;
     timer: number = 0;
-    lastFireTimer: number = -1;
+    lastFireTimer: number = -1;  // fire cooldown channel 0
+    lastFireTimer2: number = -1; // fire cooldown channel 1
+    patternStep: number = -1;    // one-shot step tracker (e.g. warp cycles)
     isMidBoss: boolean = false;
+    maxHp: number = 1; // set in initPhases — used for HP-based phase transitions
     introComplete: boolean = false; // once true, no re-entry guard
     startX: number = 0;
     startY: number = 0;
@@ -230,130 +233,107 @@ export class Boss extends Enemy {
         this.startX = x;
         this.startY = 50; // default target Y
 
-        const baseHp = 150 + bossType * 100;
+        // Phases, HP and size are assigned in initPhases(). For a mid-boss the
+        // engine sets isMidBoss = true after construction and calls initPhases()
+        // again to switch to mid-boss patterns / HP / size.
+        this.phases = [];
+        this.initPhases();
 
-        switch (bossType) {
-            case 1:
-                this.phases = [
-                    { hp: baseHp, update: this.boss1Phase1 },
-                    { hp: baseHp * 1.5, update: this.boss1Phase2 }
-                ];
-                break;
-            case 2:
-                this.phases = [
-                    { hp: baseHp * 1.5, update: this.boss2Phase1 },
-                    { hp: baseHp * 2.0, update: this.boss2Phase2 }
-                ];
-                break;
-            case 3:
-                this.phases = [
-                    { hp: baseHp * 1.8, update: this.boss3Phase1 },
-                    { hp: baseHp * 2.2, update: this.boss3Phase2 }
-                ];
-                break;
-            case 4:
-                this.phases = [
-                    { hp: baseHp * 2.0, update: this.boss4Phase1 },
-                    { hp: baseHp * 2.5, update: this.boss4Phase2 }
-                ];
-                break;
-            case 5:
-                this.phases = [
-                    { hp: baseHp * 2.5, update: this.boss5Phase1 },
-                    { hp: baseHp * 3.0, update: this.boss5Phase2 },
-                    { hp: baseHp * 3.5, update: this.boss5Phase3 }
-                ];
-                break;
-            default:
-                this.phases = [
-                    { hp: baseHp, update: this.boss1Phase1 }
-                ];
-                break;
-        }
-
-        // HP: Boss is always significantly stronger than mid-boss
-        // Mid-boss: 1790 + bossType*850 | Boss: 3800 + bossType*1200
-        this.hp = (this.isMidBoss ? 1790 + bossType * 850 : 3800 + bossType * 1200);
         this.phaseDuration = 20 + Math.random() * 10;
         this.speedY = 100; // Entry speed
     }
 
-    // Call this AFTER setting isMidBoss to assign correct phases
+    // Call this AFTER setting isMidBoss to assign correct phases, HP and size.
+    // Note: BossPhase.hp is unused — phase transitions are time-based.
     initPhases() {
         const bossType = this.bossType;
-        const baseHp = 150 + bossType * 100;
 
         if (this.isMidBoss) {
-            // ---- MID-BOSS PATTERNS (unique per stage) ----
-            switch (bossType) {
+            // ---- MID-BOSS: patterns & HP keyed to the CURRENT stage so every
+            // stage's mid-boss is unique (bossType only selects the sprite) ----
+            const stage = Math.min(5, Math.max(1, this.engine.stage));
+
+            // Mid-boss HP: 900 / 1200 / 1500 / 1800 / 2100
+            this.hp = 600 + stage * 300;
+            this.maxHp = this.hp;
+
+            // Visibly smaller than the stage boss
+            this.width = 140;
+            this.height = 140;
+
+            switch (stage) {
                 case 1:
                     this.phases = [
-                        { hp: baseHp, update: this.midBoss1Phase1 },
-                        { hp: baseHp * 1.3, update: this.midBoss1Phase2 }
+                        { hp: 0, update: this.midBoss1Phase1 },
+                        { hp: 0, update: this.midBoss1Phase2 }
                     ];
                     break;
                 case 2:
                     this.phases = [
-                        { hp: baseHp * 1.2, update: this.midBoss2Phase1 },
-                        { hp: baseHp * 1.5, update: this.midBoss2Phase2 }
+                        { hp: 0, update: this.midBoss2Phase1 },
+                        { hp: 0, update: this.midBoss2Phase2 }
                     ];
                     break;
                 case 3:
                     this.phases = [
-                        { hp: baseHp * 1.4, update: this.midBoss3Phase1 },
-                        { hp: baseHp * 1.8, update: this.midBoss3Phase2 }
+                        { hp: 0, update: this.midBoss3Phase1 },
+                        { hp: 0, update: this.midBoss3Phase2 }
                     ];
                     break;
                 case 4:
                     this.phases = [
-                        { hp: baseHp * 1.6, update: this.midBoss4Phase1 },
-                        { hp: baseHp * 2.0, update: this.midBoss4Phase2 }
+                        { hp: 0, update: this.midBoss4Phase1 },
+                        { hp: 0, update: this.midBoss4Phase2 }
                     ];
                     break;
                 default:
                     this.phases = [
-                        { hp: baseHp * 1.8, update: this.midBoss5Phase1 },
-                        { hp: baseHp * 2.2, update: this.midBoss5Phase2 }
+                        { hp: 0, update: this.midBoss5Phase1 },
+                        { hp: 0, update: this.midBoss5Phase2 }
                     ];
                     break;
             }
         } else {
-            // ---- BOSS PATTERNS (existing, slightly boosted) ----
+            // ---- STAGE BOSS ----
+            // Boss HP: 1800 / 2400 / 3000 / 3600 / 4200
+            this.hp = 1200 + bossType * 600;
+            this.maxHp = this.hp;
+
             switch (bossType) {
                 case 1:
                     this.phases = [
-                        { hp: baseHp, update: this.boss1Phase1 },
-                        { hp: baseHp * 1.5, update: this.boss1Phase2 }
+                        { hp: 0, update: this.boss1Phase1 },
+                        { hp: 0, update: this.boss1Phase2 }
                     ];
                     break;
                 case 2:
                     this.phases = [
-                        { hp: baseHp * 1.5, update: this.boss2Phase1 },
-                        { hp: baseHp * 2.0, update: this.boss2Phase2 }
+                        { hp: 0, update: this.boss2Phase1 },
+                        { hp: 0, update: this.boss2Phase2 }
                     ];
                     break;
                 case 3:
                     this.phases = [
-                        { hp: baseHp * 1.8, update: this.boss3Phase1 },
-                        { hp: baseHp * 2.2, update: this.boss3Phase2 }
+                        { hp: 0, update: this.boss3Phase1 },
+                        { hp: 0, update: this.boss3Phase2 }
                     ];
                     break;
                 case 4:
                     this.phases = [
-                        { hp: baseHp * 2.0, update: this.boss4Phase1 },
-                        { hp: baseHp * 2.5, update: this.boss4Phase2 }
+                        { hp: 0, update: this.boss4Phase1 },
+                        { hp: 0, update: this.boss4Phase2 }
                     ];
                     break;
                 case 5:
                     this.phases = [
-                        { hp: baseHp * 2.5, update: this.boss5Phase1 },
-                        { hp: baseHp * 3.0, update: this.boss5Phase2 },
-                        { hp: baseHp * 3.5, update: this.boss5Phase3 }
+                        { hp: 0, update: this.boss5Phase1 },
+                        { hp: 0, update: this.boss5Phase2 },
+                        { hp: 0, update: this.boss5Phase3 }
                     ];
                     break;
                 default:
                     this.phases = [
-                        { hp: baseHp, update: this.boss1Phase1 }
+                        { hp: 0, update: this.boss1Phase1 }
                     ];
                     break;
             }
@@ -379,6 +359,10 @@ export class Boss extends Enemy {
                 this.engine.bossActive = false;
                 this.engine.addScore(this.scoreValue);
                 if (!this.isMidBoss) {
+                    // Sweep leftover popcorn and bullets so nothing lingers
+                    // (or kills the player) on the results screen
+                    this.engine.enemies = [];
+                    this.engine.enemyBullets = [];
                     this.engine.gameState = GameState.StageClear;
                     if (this.engine.audioInitialized) audio.playPowerup();
                 }
@@ -399,12 +383,20 @@ export class Boss extends Enemy {
         this.phaseTimer += dt;
         this.bossHitSoundTimer -= dt;
 
-        // Time-based phase transition
-        if (this.phaseTimer >= this.phaseDuration && this.currentPhase < this.phases.length - 1) {
+        // Phase transition: by elapsed time OR by HP crossing equal-split
+        // boundaries (2 phases → 50%, 3 phases → 66%/33%), whichever comes
+        // first — so high-DPS players still see every phase.
+        const hpFrac = Math.max(0, this.hp) / this.maxHp;
+        const nextHpBoundary = 1 - (this.currentPhase + 1) / this.phases.length;
+        if ((this.phaseTimer >= this.phaseDuration || hpFrac <= nextHpBoundary)
+            && this.currentPhase < this.phases.length - 1) {
             this.currentPhase++;
             this.phaseTimer = 0;
             this.phaseDuration = 20 + Math.random() * 10;
             this.timer = 0; // reset pattern timer for the new phase
+            this.lastFireTimer = -1;
+            this.lastFireTimer2 = -1;
+            this.patternStep = -1;
 
             // Visual feedback for phase shift
             for (let i = 0; i < 20; i++) {
@@ -424,7 +416,9 @@ export class Boss extends Enemy {
     hit(damage: number) {
         if (this.y < 0 || this.dyingTimer > 0) return; // Invincible during intro or dying
         this.hp -= damage;
-        this.engine.addScore(10);
+        // Score scales with damage dealt (total chip score is bounded by boss HP)
+        // — a flat +10 per call let per-frame contact/laser hits farm extends.
+        this.engine.addScore(Math.max(1, Math.round(damage * 5)));
 
         // Play a distinct metallic boss hit sound (throttled to avoid noise spam)
         if (this.bossHitSoundTimer <= 0 && this.engine.audioInitialized) {
@@ -462,7 +456,10 @@ export class Boss extends Enemy {
             if (this.dyingTimer > 0 && Math.floor(this.dyingTimer * 10) % 2 === 0) {
                 ctx.filter = 'brightness(2.0) sepia(1) hue-rotate(-50deg) saturate(5)';
             } else if (this.isMidBoss) {
-                ctx.filter = 'hue-rotate(120deg) brightness(1.2) scale(0.7)';
+                // NOTE: scale() is not a valid CSS filter — it silently disabled
+                // the whole filter and made mid-bosses look identical to bosses.
+                // Size difference is handled via width/height in initPhases().
+                ctx.filter = 'hue-rotate(120deg) brightness(1.2)';
             }
 
             ctx.drawImage(img, -this.width / 2, -this.height / 2, this.width, this.height);
@@ -474,6 +471,20 @@ export class Boss extends Enemy {
     }
 
     // --- Helper Methods ---
+
+    /**
+     * Frame-rate independent fire gate. Returns true at most once per
+     * `interval` seconds on the given cooldown channel (0 or 1).
+     * Unlike the `timer % x < 0.1` idiom this fires exactly one volley.
+     */
+    fireGate(channel: 0 | 1, interval: number): boolean {
+        const last = channel === 0 ? this.lastFireTimer : this.lastFireTimer2;
+        if (this.timer - last < interval) return false;
+        if (channel === 0) this.lastFireTimer = this.timer;
+        else this.lastFireTimer2 = this.timer;
+        return true;
+    }
+
     fireAngle(angle: number, speed: number, color: string = '#FF0055') {
         // Mid-boss bullets travel 10% slower
         const actualSpeed = this.isMidBoss ? speed * 0.9 : speed;
@@ -663,146 +674,220 @@ export class Boss extends Enemy {
         }
     }
 
-    // =====================================================
-    // === MID-BOSS PATTERNS (distinct from main boss) ===
-    // =====================================================
+    // ==============================================================
+    // === MID-BOSS PATTERNS — movement archetypes intentionally  ===
+    // === different from stage bosses (which hover at the top    ===
+    // === and sweep side to side). Selected by CURRENT stage.    ===
+    // ==============================================================
 
-    // Stage 1 Mid-Boss: Slow cross-fire sweep + single aimed shot
-    midBoss1Phase1(boss: Boss, _dt: number) {
-        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 0.6) * 120;
-        // Slow horizontal cross-streams
-        if (boss.timer % 2.0 < 0.1) {
-            for (let i = -2; i <= 2; i++) {
-                boss.fireAngle(Math.PI / 2 + i * 0.25, 160, '#FF6600');
-            }
-        }
-        // Single aimed shot every 3s
-        if (boss.timer % 3.0 < 0.1) {
-            boss.fireAtPlayer(220);
-        }
-    }
-    midBoss1Phase2(boss: Boss, _dt: number) {
-        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 1.2) * 160;
-        // Rapid aimed shots with short intervals
-        if (boss.timer % 1.0 < 0.1) {
-            boss.fireAtPlayer(260);
-            boss.fireAtPlayer(240);
-        }
-        // Slow ring burst
-        if (boss.timer % 4.0 < 0.1) {
-            for (let i = 0; i < 8; i++) {
-                boss.fireAngle((Math.PI * 2 / 8) * i, 130, '#FF6600');
+    // Stage 1 Mid-Boss "LUNGER": tracks the player, telegraphs, then
+    // dives down at them and slowly retreats while firing.
+    midBoss1Phase1(boss: Boss, dt: number) {
+        const topY = 60;
+        const diveY = boss.engine.height * 0.45;
+        const playerCX = boss.engine.player.x + boss.engine.player.width / 2;
+        const cycle = boss.timer % 4.5;
+
+        if (cycle < 1.4) {
+            // Hover & slide over the player — telegraph
+            boss.y += (topY - boss.y) * Math.min(1, 4 * dt);
+            boss.x += (playerCX - boss.width / 2 - boss.x) * Math.min(1, 2.5 * dt);
+        } else if (cycle < 2.2) {
+            // Lunge straight down
+            boss.y += (diveY - boss.y) * Math.min(1, 6 * dt);
+        } else {
+            // Slow retreat, firing single aimed shots
+            boss.y += (topY - boss.y) * Math.min(1, 1.2 * dt);
+            if (boss.fireGate(0, 1.4)) {
+                boss.fireAtPlayer(210);
             }
         }
     }
+    midBoss1Phase2(boss: Boss, dt: number) {
+        const topY = 60;
+        const diveY = boss.engine.height * 0.55;
+        const playerCX = boss.engine.player.x + boss.engine.player.width / 2;
+        const cycle = boss.timer % 3.2;
 
-    // Stage 2 Mid-Boss: Three-way spread, repositions side to side
+        if (cycle < 0.9) {
+            boss.y += (topY - boss.y) * Math.min(1, 5 * dt);
+            boss.x += (playerCX - boss.width / 2 - boss.x) * Math.min(1, 3.5 * dt);
+        } else if (cycle < 1.6) {
+            boss.y += (diveY - boss.y) * Math.min(1, 7 * dt);
+        } else {
+            boss.y += (topY - boss.y) * Math.min(1, 1.5 * dt);
+            // 3-way volley during retreat
+            if (boss.fireGate(0, 1.0)) {
+                boss.fireAtPlayer(250);
+                boss.fireAngle(Math.PI / 2 - 0.4, 210, '#FF6600');
+                boss.fireAngle(Math.PI / 2 + 0.4, 210, '#FF6600');
+            }
+        }
+    }
+
+    // Stage 2 Mid-Boss "PATROLLER": slides edge-to-edge dropping a straight
+    // bullet curtain behind it, pausing at each edge for an aimed shot.
     midBoss2Phase1(boss: Boss, _dt: number) {
-        // Pendulum movement between sides
-        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 0.8) * 180;
-        if (boss.timer % 1.5 < 0.1) {
-            boss.fireAngle(Math.PI / 2 - 0.3, 200, '#00FF88');
-            boss.fireAngle(Math.PI / 2, 200, '#00FF88');
-            boss.fireAngle(Math.PI / 2 + 0.3, 200, '#00FF88');
+        const range = boss.engine.width - boss.width - 40;
+        const period = 6.0;
+        const t = (boss.timer % period) / period;
+        const tri = t < 0.5 ? t * 2 : (1 - t) * 2;       // 0..1..0 triangle
+        const ease = tri * tri * (3 - 2 * tri);           // smoothstep = edge pause
+        boss.x = 20 + range * ease;
+        boss.y = 55 + Math.sin(boss.timer * 1.2) * 10;
+
+        // Bullet curtain while in transit
+        if (tri > 0.08 && tri < 0.92 && boss.fireGate(0, 0.4)) {
+            boss.fireAngle(Math.PI / 2, 170, '#00FF88');
+        }
+        // Aimed shot while paused at the edges
+        if ((tri <= 0.08 || tri >= 0.92) && boss.fireGate(1, 1.2)) {
+            boss.fireAtPlayer(260);
         }
     }
     midBoss2Phase2(boss: Boss, _dt: number) {
-        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 1.8) * 200;
-        // Wider 5-way burst
-        if (boss.timer % 1.0 < 0.1) {
-            for (let i = -2; i <= 2; i++) {
-                boss.fireAngle(Math.PI / 2 + i * 0.2, 240, '#00FF88');
-            }
+        const range = boss.engine.width - boss.width - 40;
+        const period = 4.2; // faster patrol
+        const t = (boss.timer % period) / period;
+        const tri = t < 0.5 ? t * 2 : (1 - t) * 2;
+        const ease = tri * tri * (3 - 2 * tri);
+        boss.x = 20 + range * ease;
+        boss.y = 55 + Math.sin(boss.timer * 1.8) * 18;
+
+        // Denser curtain: straight + slight diagonals
+        if (tri > 0.08 && tri < 0.92 && boss.fireGate(0, 0.35)) {
+            boss.fireAngle(Math.PI / 2, 200, '#00FF88');
+            boss.fireAngle(Math.PI / 2 + 0.25, 180, '#00FF88');
+            boss.fireAngle(Math.PI / 2 - 0.25, 180, '#00FF88');
         }
-        // Aimed pursuit shot
-        if (boss.timer % 2.0 < 0.1) {
-            boss.fireAtPlayer(300);
+        if ((tri <= 0.08 || tri >= 0.92) && boss.fireGate(1, 1.0)) {
+            boss.fireAtPlayer(310);
         }
     }
 
-    // Stage 3 Mid-Boss: Ring burst on entry then constant aimed shots
+    // Stage 3 Mid-Boss "WARPER": teleports around the upper screen with a
+    // particle telegraph, firing a ring burst on every arrival.
     midBoss3Phase1(boss: Boss, _dt: number) {
-        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.cos(boss.timer * 0.4) * 80;
-        // Ring burst every 3.5s
-        if (boss.timer % 3.5 < 0.1) {
-            for (let i = 0; i < 10; i++) {
-                boss.fireAngle((Math.PI * 2 / 10) * i, 180, '#AA00FF');
+        const period = 3.0;
+        const phase = boss.timer % period;
+        const cycleIndex = Math.floor(boss.timer / period);
+
+        if (phase < 2.2) {
+            // Hold position, aimed double shot
+            if (boss.fireGate(0, 1.2)) {
+                boss.fireAtPlayer(280);
             }
-        }
-        // Constant aimed shots
-        if (boss.timer % 1.2 < 0.1) {
-            boss.fireAtPlayer(280);
+        } else if (phase < 2.75) {
+            // Telegraph: purple charge particles
+            if (Math.random() < 0.5) {
+                const p = new Particle(boss.engine, boss.x + Math.random() * boss.width, boss.y + Math.random() * boss.height);
+                p.color = '#AA00FF';
+                boss.engine.addParticle(p);
+            }
+        } else if (cycleIndex !== boss.patternStep) {
+            // Warp once per cycle + arrival ring burst
+            boss.patternStep = cycleIndex;
+            boss.x = 20 + Math.random() * (boss.engine.width - boss.width - 40);
+            boss.y = 30 + Math.random() * 130;
+            for (let i = 0; i < 10; i++) {
+                boss.fireAngle((Math.PI * 2 / 10) * i, 170, '#AA00FF');
+            }
         }
     }
     midBoss3Phase2(boss: Boss, _dt: number) {
-        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 2.0) * 140;
-        boss.y = 40 + Math.sin(boss.timer * 0.7) * 30;
-        // Double ring
-        if (boss.timer % 2.5 < 0.1) {
+        const period = 2.2; // faster warps
+        const phase = boss.timer % period;
+        const cycleIndex = Math.floor(boss.timer / period);
+
+        if (phase < 1.5) {
+            if (boss.fireGate(0, 0.9)) {
+                boss.fireAtPlayer(320);
+                boss.fireAtPlayer(290);
+            }
+        } else if (phase < 1.95) {
+            if (Math.random() < 0.5) {
+                const p = new Particle(boss.engine, boss.x + Math.random() * boss.width, boss.y + Math.random() * boss.height);
+                p.color = '#FF00AA';
+                boss.engine.addParticle(p);
+            }
+        } else if (cycleIndex !== boss.patternStep) {
+            boss.patternStep = cycleIndex;
+            boss.x = 20 + Math.random() * (boss.engine.width - boss.width - 40);
+            boss.y = 30 + Math.random() * 150;
+            // Double ring on arrival
             for (let i = 0; i < 8; i++) {
                 boss.fireAngle((Math.PI * 2 / 8) * i, 200, '#AA00FF');
-                boss.fireAngle((Math.PI * 2 / 8) * i + 0.2, 150, '#FF00AA');
+                boss.fireAngle((Math.PI * 2 / 8) * i + 0.25, 150, '#FF00AA');
             }
-        }
-        if (boss.timer % 0.8 < 0.1) {
-            boss.fireAtPlayer(320);
         }
     }
 
-    // Stage 4 Mid-Boss: Zigzag movement + diagonal streams
+    // Stage 4 Mid-Boss "SWOOPER": figure-8 swoops across the whole upper
+    // half, leaving trailing diagonal shots.
     midBoss4Phase1(boss: Boss, _dt: number) {
-        // Sharp zigzag
-        boss.x = (boss.engine.width / 2 - boss.width / 2) + (boss.timer % 2.0 < 1.0 ? 1 : -1) * 180;
-        boss.y = 30 + Math.sin(boss.timer * 1.5) * 30;
-        // Diagonal streams
-        if (boss.timer % 0.6 < 0.1) {
-            boss.fireAngle(Math.PI / 2 + 0.5, 280, '#FFFF00');
-            boss.fireAngle(Math.PI / 2 - 0.5, 280, '#FFFF00');
+        const cx = boss.engine.width / 2 - boss.width / 2;
+        boss.x = cx + Math.sin(boss.timer * 1.6) * (boss.engine.width * 0.35);
+        boss.y = 95 + Math.sin(boss.timer * 3.2) * 70;
+
+        // Trailing diagonals while swooping
+        if (boss.fireGate(0, 0.5)) {
+            boss.fireAngle(Math.PI / 2 + 0.5, 240, '#FFFF00');
+            boss.fireAngle(Math.PI / 2 - 0.5, 240, '#FFFF00');
         }
     }
     midBoss4Phase2(boss: Boss, _dt: number) {
-        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 3.0) * 200;
-        boss.y = 20 + Math.abs(Math.sin(boss.timer * 1.5)) * 60;
-        // Dense diagonal + aimed
-        if (boss.timer % 0.4 < 0.1) {
-            boss.fireAngle(Math.PI / 2 + 0.4, 300, '#FFFF00');
-            boss.fireAngle(Math.PI / 2 - 0.4, 300, '#FFFF00');
-            boss.fireAngle(Math.PI / 2 + 0.8, 240, '#FF8800');
-            boss.fireAngle(Math.PI / 2 - 0.8, 240, '#FF8800');
+        const cx = boss.engine.width / 2 - boss.width / 2;
+        boss.x = cx + Math.sin(boss.timer * 2.2) * (boss.engine.width * 0.38);
+        boss.y = 95 + Math.sin(boss.timer * 4.4) * 80;
+
+        if (boss.fireGate(0, 0.4)) {
+            boss.fireAngle(Math.PI / 2 + 0.5, 280, '#FFFF00');
+            boss.fireAngle(Math.PI / 2 - 0.5, 280, '#FFFF00');
         }
-        if (boss.timer % 1.5 < 0.1) {
-            boss.fireAtPlayer(350);
+        // Cross "X" burst + aimed shot on a slower channel
+        if (boss.fireGate(1, 1.6)) {
+            boss.fireAngle(Math.PI / 2 + 0.9, 230, '#FF8800');
+            boss.fireAngle(Math.PI / 2 - 0.9, 230, '#FF8800');
+            boss.fireAtPlayer(330);
         }
     }
 
-    // Stage 5 Mid-Boss: Double-spiral + aimed homing bursts
+    // Stage 5 Mid-Boss "ORBITER": circles the upper-center spraying
+    // tangential double-spiral fire.
     midBoss5Phase1(boss: Boss, _dt: number) {
-        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 2.5) * 180;
-        boss.y = 40 + Math.cos(boss.timer * 1.8) * 40;
-        // Double-spiral
-        if (boss.timer % 0.12 < 0.06) {
-            const angle = boss.timer * 4;
-            boss.fireAngle(angle, 220, '#FF0088');
-            boss.fireAngle(angle + Math.PI, 220, '#0088FF');
+        const ccx = boss.engine.width / 2 - boss.width / 2;
+        const r = Math.min(boss.engine.width * 0.3, 150);
+        boss.x = ccx + Math.cos(boss.timer * 1.8) * r;
+        boss.y = 110 + Math.sin(boss.timer * 1.8) * 75;
+
+        // Tangential double-spiral
+        if (boss.fireGate(0, 0.25)) {
+            const ang = boss.timer * 1.8 + Math.PI / 2;
+            boss.fireAngle(ang, 230, '#FF0088');
+            boss.fireAngle(ang + Math.PI, 230, '#0088FF');
         }
-        if (boss.timer % 1.5 < 0.1) {
-            boss.fireAtPlayer(350);
+        if (boss.fireGate(1, 1.6)) {
+            boss.fireAtPlayer(330);
         }
     }
     midBoss5Phase2(boss: Boss, _dt: number) {
-        boss.x = (boss.engine.width / 2 - boss.width / 2) + Math.sin(boss.timer * 4) * 200;
-        boss.y = 20 + Math.abs(Math.cos(boss.timer * 3)) * 80;
+        const ccx = boss.engine.width / 2 - boss.width / 2;
+        const r = Math.min(boss.engine.width * 0.24, 120);
+        // Tighter, faster orbit
+        boss.x = ccx + Math.cos(boss.timer * 2.8) * r;
+        boss.y = 110 + Math.sin(boss.timer * 2.8) * 60;
+
         // Triple spiral
-        if (boss.timer % 0.1 < 0.05) {
-            const angle = boss.timer * 5;
-            boss.fireAngle(angle, 260, '#FF0088');
-            boss.fireAngle(angle + Math.PI * 2 / 3, 260, '#FF0088');
-            boss.fireAngle(angle + Math.PI * 4 / 3, 260, '#FF0088');
+        if (boss.fireGate(0, 0.22)) {
+            const ang = boss.timer * 2.8 + Math.PI / 2;
+            boss.fireAngle(ang, 260, '#FF0088');
+            boss.fireAngle(ang + Math.PI * 2 / 3, 260, '#FF0088');
+            boss.fireAngle(ang + Math.PI * 4 / 3, 260, '#0088FF');
         }
-        // Rapid aimed burst every second
-        if (boss.timer % 0.9 < 0.1) {
-            boss.fireAtPlayer(400);
-            boss.fireAtPlayer(370);
+        // Aimed double burst
+        if (boss.fireGate(1, 1.1)) {
+            boss.fireAtPlayer(380);
+            boss.fireAtPlayer(350);
         }
     }
 }

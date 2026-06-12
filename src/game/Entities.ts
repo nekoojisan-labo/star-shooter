@@ -37,7 +37,7 @@ export class Player extends Entity {
     shotTimer: number = 0;
     shotDelay: number = 0.12;
     subShotTimer: number = 0;
-    subShotDelay: number = 1.2; // Homing delay increased
+    subShotDelay: number = 0.9; // Homing volley interval
     weapon = new WeaponState();
     barrierHp: number = 0;
     invincibleTimer: number = 0;
@@ -147,46 +147,59 @@ export class Player extends Entity {
 
         this.createMainBullets(cx, cy);
 
-        // Bits also fire the main weapon output
+        // Bits also fire the main weapon, at half damage — full copies made
+        // max-bit loadouts melt bosses before their later phases could play
         if (this.weapon.hasBits) {
             this.bits.forEach(bit => {
-                this.createMainBullets(bit.x + bit.width / 2, bit.y);
+                this.createMainBullets(bit.x + bit.width / 2, bit.y, 0.5);
             });
         }
     }
 
-    createMainBullets(cx: number, cy: number) {
+    createMainBullets(cx: number, cy: number, damageScale: number = 1) {
         // Main Weapon
         let b: Bullet;
         switch (this.weapon.type) {
-            case WeaponType.Normal:
+            case WeaponType.Normal: {
+                // Normal shot: 2 dmg per bullet, bullet count scales with level
+                const addNormal = (bx: number, by: number) => {
+                    const nb = new Bullet(this.engine, bx, by, 0, -600);
+                    nb.damage = 2 * damageScale;
+                    this.engine.addBullet(nb);
+                };
                 if (this.weapon.level === 1) {
-                    this.engine.addBullet(new Bullet(this.engine, cx - 4, cy, 0, -600));
+                    addNormal(cx - 4, cy);
                 } else if (this.weapon.level === 2) {
-                    this.engine.addBullet(new Bullet(this.engine, cx - 12, cy + 10, 0, -600));
-                    this.engine.addBullet(new Bullet(this.engine, cx + 4, cy + 10, 0, -600));
+                    addNormal(cx - 12, cy + 10);
+                    addNormal(cx + 4, cy + 10);
                 } else {
-                    this.engine.addBullet(new Bullet(this.engine, cx - 16, cy + 16, 0, -600));
-                    this.engine.addBullet(new Bullet(this.engine, cx - 4, cy, 0, -600));
-                    this.engine.addBullet(new Bullet(this.engine, cx + 8, cy + 16, 0, -600));
+                    addNormal(cx - 16, cy + 16);
+                    addNormal(cx - 4, cy);
+                    addNormal(cx + 8, cy + 16);
                 }
                 break;
-            case WeaponType.Laser:
+            }
+            case WeaponType.Laser: {
                 const laserWidth = this.weapon.level * 8 + 8; // 16, 24, 32 width
                 const bLaser = new Bullet(this.engine, cx - laserWidth / 2, cy - 40, 0, -1200);
                 bLaser.width = laserWidth;
                 bLaser.height = 64;
                 bLaser.pierces = true;
-                // Laser: highest DPS - hits every frame, scaled down per hit
-                // Lv1: 0.5, Lv2: 0.7, Lv3: 1.0 per frame (~60fps = 30/42/60 DPS)
-                bLaser.damage = 0.35 + this.weapon.level * 0.2;
+                // Laser: best single-target DPS. Piercing damage is applied per frame
+                // and dt-normalized (60fps baseline) in GameEngine.checkCollisions.
+                // Lv1: 0.45, Lv2: 0.6, Lv3: 0.75 per frame
+                bLaser.damage = (0.3 + this.weapon.level * 0.15) * damageScale;
                 bLaser.color = '#FFAAFF'; // used as identifier for pink image
                 this.engine.addBullet(bLaser);
                 break;
-            case WeaponType.Wide:
+            }
+            case WeaponType.Wide: {
                 const sSpeed = 700;
+                // 2.0 / 2.2 / 2.4 per bullet — must clear the hp-2 popcorn
+                // breakpoint or picking WIDE would downgrade from Normal (2 dmg)
+                const wideDmg = (1.8 + this.weapon.level * 0.2) * damageScale;
                 b = new Bullet(this.engine, cx - 4, cy, 0, -sSpeed);
-                b.damage = this.weapon.level === 3 ? 1.2 : (this.weapon.level === 2 ? 1.0 : 0.8); // Wide is easier to land but lower per-bullet
+                b.damage = wideDmg;
                 this.engine.addBullet(b);
 
                 let spreadAngles = [];
@@ -198,9 +211,12 @@ export class Player extends Entity {
                     spreadAngles = [-0.4, -0.2, 0.2, 0.4];
                 }
                 for (let angle of spreadAngles) {
-                    this.engine.addBullet(new Bullet(this.engine, cx - 4, cy, Math.sin(angle) * sSpeed, -sSpeed * Math.cos(angle)));
+                    const sb = new Bullet(this.engine, cx - 4, cy, Math.sin(angle) * sSpeed, -sSpeed * Math.cos(angle));
+                    sb.damage = wideDmg;
+                    this.engine.addBullet(sb);
                 }
                 break;
+            }
         }
     }
 
@@ -219,11 +235,12 @@ export class Player extends Entity {
                 const vy = -350; // strong upward launch velocity
                 const hb = new HomingBullet(this.engine, cx - 6, cy + 20, vx, vy);
                 hb.level = level;
-                // Homing damage: between Laser (highest) and Wide (lowest)
-                // Lv1: 1.2, Lv2: 1.5, Lv3: 2.0
-                hb.damage = 0.9 + level * 0.35;
+                // Homing: auto-hit sub weapon. Lv1: 3, Lv2: 4, Lv3: 5 per missile
+                hb.damage = 2 + level;
                 hb.width = 10 + level * 4;
                 hb.height = 10 + level * 4;
+                // Each missile in the salvo gets its own index so targets spread out
+                hb.salvoIndex = i;
                 this.engine.addBullet(hb);
             }
         }
@@ -320,7 +337,14 @@ export class Bullet extends Entity {
             }
             ctx.restore();
         } else if (this.engine.bulletBlueImage.complete) {
-            ctx.drawImage(this.engine.bulletBlueImage, this.x, this.y, this.width, this.height);
+            // Additive halo behind the bullet for a brighter energy-shot look
+            const img = this.engine.bulletBlueImage;
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = 0.35;
+            ctx.drawImage(img, this.x - this.width * 0.4, this.y - this.height * 0.25, this.width * 1.8, this.height * 1.5);
+            ctx.restore();
+            ctx.drawImage(img, this.x, this.y, this.width, this.height);
         } else {
             ctx.fillStyle = this.color;
             ctx.fillRect(this.x, this.y, this.width, this.height);
@@ -350,10 +374,11 @@ export class EnemyBullet extends Bullet {
 
 export class HomingBullet extends Bullet {
     target: Enemy | null = null;
-    timer: number = 0;
     totalLifespan: number = 0;
     maxLifespan: number = 5.0;
     level: number = 1; // 1-3, drives appearance and damage
+    salvoIndex: number = 0; // position within the launch salvo — spreads targets
+    trail: { x: number, y: number }[] = []; // exhaust trail history
     launchTimer: number = 0;
     readonly launchDuration: number = 0.25; // seconds of initial launch arc
 
@@ -366,7 +391,6 @@ export class HomingBullet extends Bullet {
 
     update(dt: number) {
         super.update(dt);
-        this.timer += dt;
         this.launchTimer += dt;
         this.totalLifespan += dt;
 
@@ -375,6 +399,10 @@ export class HomingBullet extends Bullet {
             return;
         }
 
+        // Exhaust trail history (rendered in draw)
+        this.trail.push({ x: this.x + this.width / 2, y: this.y + this.height / 2 });
+        if (this.trail.length > 7) this.trail.shift();
+
         // Launch arc: for the first launchDuration, fly upward and slightly outward
         // then begin homing. This mimics classic shooter homing missile behavior.
         if (this.launchTimer < this.launchDuration) {
@@ -382,10 +410,14 @@ export class HomingBullet extends Bullet {
             return;
         }
 
-        // Find top 3 closest targets and pick one randomly so missiles spread out
-        if (!this.target || !this.target.active || this.timer > 0.5) {
-            this.timer = 0;
-            let candidates: { enemy: Enemy, dist: number }[] = [];
+        // Target acquisition: enemies sorted nearest-first, each missile picks
+        // the slot matching its salvoIndex — so one volley fans out across
+        // different enemies instead of all chasing the same one.
+        // Once locked, a missile keeps its target until it dies (re-picking
+        // every 0.5s made higher-index missiles abandon the enemy they were
+        // about to hit, since that enemy had become their own 0th-nearest).
+        if (!this.target || !this.target.active) {
+            const candidates: { enemy: Enemy, dist: number }[] = [];
             this.engine.enemies.forEach(e => {
                 if (!e.active || e.y < 0) return;
                 const dx = (e.x + e.width / 2) - (this.x + this.width / 2);
@@ -395,8 +427,7 @@ export class HomingBullet extends Bullet {
 
             if (candidates.length > 0) {
                 candidates.sort((a, b) => a.dist - b.dist);
-                const topN = Math.min(3, candidates.length);
-                this.target = candidates[Math.floor(Math.random() * topN)].enemy;
+                this.target = candidates[this.salvoIndex % candidates.length].enemy;
             } else {
                 this.target = null;
             }
@@ -427,50 +458,83 @@ export class HomingBullet extends Bullet {
         const cx = this.x + this.width / 2;
         const cy = this.y + this.height / 2;
 
+        // Fading exhaust trail (world space, oldest first)
+        ctx.save();
+        for (let i = 0; i < this.trail.length; i++) {
+            const t = this.trail[i];
+            ctx.globalAlpha = ((i + 1) / this.trail.length) * 0.3;
+            ctx.fillStyle = this.level >= 3 ? '#FF6633' : '#FFAA33';
+            ctx.beginPath();
+            ctx.arc(t.x, t.y, 1.2 + i * 0.45, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.restore();
+
+        // Missile body, drawn nose-up then rotated to flight direction
+        const scale = 0.85 + this.level * 0.3; // Lv1: 1.15x, Lv2: 1.45x, Lv3: 1.75x
+        const bodyCol = this.level >= 3 ? '#FFEEDD' : this.level === 2 ? '#FFE066' : '#DDDDDD';
+        const accent = this.level >= 3 ? '#FF3300' : this.level === 2 ? '#FF8800' : '#FF6600';
+
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(angle);
+        ctx.scale(scale, scale);
 
-        if (this.level === 1) {
-            // Lv1: small orange circle
-            ctx.shadowBlur = 8;
-            ctx.shadowColor = '#FFAA00';
-            ctx.fillStyle = '#FFAA00';
-            ctx.beginPath();
-            ctx.arc(0, 0, 6, 0, Math.PI * 2);
-            ctx.fill();
-        } else if (this.level === 2) {
-            // Lv2: larger with bright yellow core + orange halo
-            ctx.shadowBlur = 14;
-            ctx.shadowColor = '#FFD700';
-            ctx.fillStyle = '#FFD700';
-            ctx.beginPath();
-            ctx.arc(0, 0, 8, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#FFFFFF';
-            ctx.beginPath();
-            ctx.arc(0, 0, 3, 0, Math.PI * 2);
-            ctx.fill();
-        } else {
-            // Lv3: large with white core and fiery red/orange glow
-            ctx.shadowBlur = 22;
-            ctx.shadowColor = '#FF6600';
-            // Outer glow
-            ctx.fillStyle = 'rgba(255, 100, 0, 0.5)';
-            ctx.beginPath();
-            ctx.arc(0, 0, 13, 0, Math.PI * 2);
-            ctx.fill();
-            // Inner orange
-            ctx.fillStyle = '#FF8800';
-            ctx.beginPath();
-            ctx.arc(0, 0, 9, 0, Math.PI * 2);
-            ctx.fill();
-            // Bright white hot core
-            ctx.fillStyle = '#FFFFFF';
-            ctx.beginPath();
-            ctx.arc(0, 0, 4, 0, Math.PI * 2);
-            ctx.fill();
-        }
+        ctx.shadowBlur = 4 + this.level * 3;
+        ctx.shadowColor = accent;
+
+        // Fuselage (capsule)
+        ctx.fillStyle = bodyCol;
+        ctx.beginPath();
+        ctx.moveTo(0, -9);
+        ctx.quadraticCurveTo(3.5, -4, 3.5, 0);
+        ctx.lineTo(3.5, 6);
+        ctx.lineTo(-3.5, 6);
+        ctx.lineTo(-3.5, 0);
+        ctx.quadraticCurveTo(-3.5, -4, 0, -9);
+        ctx.fill();
+
+        // Nose cone
+        ctx.fillStyle = accent;
+        ctx.beginPath();
+        ctx.moveTo(0, -9);
+        ctx.quadraticCurveTo(3, -4.5, 3.2, -2);
+        ctx.lineTo(-3.2, -2);
+        ctx.quadraticCurveTo(-3, -4.5, 0, -9);
+        ctx.fill();
+
+        // Tail fins
+        ctx.beginPath();
+        ctx.moveTo(3.5, 2.5);
+        ctx.lineTo(7, 8);
+        ctx.lineTo(3.5, 6.5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(-3.5, 2.5);
+        ctx.lineTo(-7, 8);
+        ctx.lineTo(-3.5, 6.5);
+        ctx.closePath();
+        ctx.fill();
+
+        // Flickering exhaust flame
+        const flick = 1 + Math.sin(this.totalLifespan * 60 + this.salvoIndex * 2) * 0.35;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#FFAA00';
+        ctx.fillStyle = '#FFCC33';
+        ctx.beginPath();
+        ctx.moveTo(-2.2, 6);
+        ctx.lineTo(0, 6 + 7 * flick);
+        ctx.lineTo(2.2, 6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.moveTo(-1, 6);
+        ctx.lineTo(0, 6 + 3.5 * flick);
+        ctx.lineTo(1, 6);
+        ctx.closePath();
+        ctx.fill();
 
         ctx.restore();
     }
@@ -485,21 +549,20 @@ export class BitEntity extends Entity {
         this.player = player;
     }
 
-    update(dt: number, index?: number, total?: number) {
+    update(_dt: number, index?: number, total?: number) {
         if (index === undefined || total === undefined) return;
 
         // Base angle off a global timer so all bits sync perfectly visually
-        this.angle = this.engine.gameTimer * 3; // Global orbit speed
+        this.angle = this.engine.gameTimer * 4.5; // Global orbit speed
 
         const orbitRadius = 60;
         const offsetAngle = this.angle + (Math.PI * 2 * index) / total;
 
-        // Smoothly follow the orbit point around the player
-        const targetX = this.player.x + this.player.width / 2 - this.width / 2 + Math.cos(offsetAngle) * orbitRadius;
-        const targetY = this.player.y + this.player.height / 2 - this.height / 2 + Math.sin(offsetAngle) * orbitRadius;
-
-        this.x += (targetX - this.x) * 10 * dt;
-        this.y += (targetY - this.y) * 10 * dt;
+        // Rigid attachment: bits are locked to the orbit point around the player
+        // so they never lag behind when the player moves fast (lerp caused a
+        // 30-45px trailing gap that made bullet-blocking unreliable).
+        this.x = this.player.x + this.player.width / 2 - this.width / 2 + Math.cos(offsetAngle) * orbitRadius;
+        this.y = this.player.y + this.player.height / 2 - this.height / 2 + Math.sin(offsetAngle) * orbitRadius;
     }
 
     draw(ctx: CanvasRenderingContext2D) {
