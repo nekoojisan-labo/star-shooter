@@ -173,6 +173,10 @@ export class Player extends Entity {
                 bLaser.width = laserWidth;
                 bLaser.height = 64;
                 bLaser.pierces = true;
+                // Laser hits each enemy once, so give it a strong per-hit damage
+                // that scales with level (L1=3, L2=5, L3=7) to stay the top
+                // single-target / piercing weapon without frame-rate exploits.
+                bLaser.damage = 1 + this.weapon.level * 2;
                 bLaser.color = '#FFAAFF'; // used as identifier for pink image
                 this.engine.addBullet(bLaser);
                 break;
@@ -258,6 +262,10 @@ export class Player extends Entity {
 export class Bullet extends Entity {
     pierces: boolean = false;
     color: string = '#00FFFF';
+    damage: number = 1;
+    // Piercing bullets keep flying through enemies, so track which enemies
+    // have already been damaged to avoid frame-rate-dependent multi-hits.
+    hitEnemies: Set<Enemy> = new Set();
 
     constructor(engine: GameEngine, x: number, y: number, speedX: number, speedY: number) {
         super(engine, x, y, 8, 16);

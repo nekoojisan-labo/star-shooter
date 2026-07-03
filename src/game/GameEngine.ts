@@ -477,10 +477,16 @@ export class GameEngine {
         for (const b of this.bullets) {
             for (const e of this.enemies) {
                 if (b.active && e.active && this.isAABB(b, e)) {
-                    if (!b.pierces) {
+                    if (b.pierces) {
+                        // Piercing bullets damage each enemy only once, so the
+                        // damage no longer scales with the frame rate.
+                        if (b.hitEnemies.has(e)) continue;
+                        b.hitEnemies.add(e);
+                        e.hit(b.damage);
+                    } else {
                         b.active = false;
+                        e.hit(b.damage);
                     }
-                    e.hit(1);
                 }
             }
         }

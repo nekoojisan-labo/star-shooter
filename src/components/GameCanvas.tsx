@@ -13,35 +13,45 @@ const GameCanvas: React.FC = () => {
     if (!ctx) return;
 
     // Use visualViewport on mobile to exclude browser chrome (address bar, etc.)
-    const getViewportSize = () => {
+    const getViewport = () => {
       const vv = window.visualViewport;
       if (vv) {
-        return { width: vv.width, height: vv.height };
+        return { width: vv.width, height: vv.height, offsetTop: vv.offsetTop, offsetLeft: vv.offsetLeft };
       }
-      return { width: window.innerWidth, height: window.innerHeight };
+      return { width: window.innerWidth, height: window.innerHeight, offsetTop: 0, offsetLeft: 0 };
     };
 
-    const resizeCanvas = () => {
-      const { width, height } = getViewportSize();
+    const applySize = () => {
+      const { width, height, offsetTop, offsetLeft } = getViewport();
+      // Keep the drawing buffer and the CSS box the same size so the canvas
+      // is never stretched. Stretching would push the bottom UI back under
+      // the mobile address bar even though the buffer excludes it.
       canvas.width = width;
       canvas.height = height;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      canvas.style.top = `${offsetTop}px`;
+      canvas.style.left = `${offsetLeft}px`;
       if (engineRef.current) {
         engineRef.current.resize(width, height);
       }
     };
 
-    // Initial size
-    const initialSize = getViewportSize();
-    canvas.width = initialSize.width;
-    canvas.height = initialSize.height;
+    const initial = getViewport();
+    canvas.width = initial.width;
+    canvas.height = initial.height;
 
-    const engine = new GameEngine(ctx, initialSize.width, initialSize.height);
+    const engine = new GameEngine(ctx, initial.width, initial.height);
     engineRef.current = engine;
+    applySize();
 
-    window.addEventListener('resize', resizeCanvas);
-    // visualViewport fires its own resize event when browser chrome toggles
+    window.addEventListener('resize', applySize);
+    window.addEventListener('orientationchange', applySize);
+    // visualViewport fires its own resize/scroll events when the browser
+    // chrome (address bar) toggles on mobile.
     if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', resizeCanvas);
+      window.visualViewport.addEventListener('resize', applySize);
+      window.visualViewport.addEventListener('scroll', applySize);
     }
 
     let animationFrameId: number;
@@ -63,9 +73,11 @@ const GameCanvas: React.FC = () => {
 
     return () => {
       cancelAnimationFrame(animationFrameId);
-      window.removeEventListener('resize', resizeCanvas);
+      window.removeEventListener('resize', applySize);
+      window.removeEventListener('orientationchange', applySize);
       if (window.visualViewport) {
-        window.visualViewport.removeEventListener('resize', resizeCanvas);
+        window.visualViewport.removeEventListener('resize', applySize);
+        window.visualViewport.removeEventListener('scroll', applySize);
       }
       engine.cleanup();
     };
@@ -76,11 +88,9 @@ const GameCanvas: React.FC = () => {
       ref={canvasRef}
       style={{
         display: 'block',
-        position: 'absolute',
+        position: 'fixed',
         top: 0,
         left: 0,
-        width: '100vw',
-        height: '100vh',
         backgroundColor: '#000'
       }}
     />

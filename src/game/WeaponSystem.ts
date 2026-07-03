@@ -30,5 +30,5 @@ export class WeaponState {
     homingLevel: number = 0; // 0 to 3
 
     hasBits: boolean = false;
-    bitLevel: number = 0; // 0 to 3
+    bitLevel: number = 0; // 0 to 5
 }
