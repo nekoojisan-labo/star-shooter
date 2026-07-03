@@ -1,7 +1,7 @@
 import { GameState } from './GameEngine';
 import type { GameEngine } from './GameEngine';
 import { audio } from '../audio/AudioEngine';
-import { WeaponType, POWERUP_SLOTS, WeaponState } from './WeaponSystem';
+import { WeaponType, POWERUP_SLOTS, WeaponState, getMainDamage, HOMING_DAMAGE } from './WeaponSystem';
 
 export class Entity {
     x: number;
@@ -153,48 +153,54 @@ export class Player extends Entity {
     }
 
     createMainBullets(cx: number, cy: number) {
-        // Main Weapon
+        const level = this.weapon.level;
+        // Per-hit damage comes from the weapon design table (source of truth).
+        const dmg = getMainDamage(this.weapon.type, level);
+        const shoot = (x: number, y: number, vx: number, vy: number, configure?: (b: Bullet) => void) => {
+            const b = new Bullet(this.engine, x, y, vx, vy);
+            b.damage = dmg;
+            if (configure) configure(b);
+            this.engine.addBullet(b);
+        };
+
         switch (this.weapon.type) {
             case WeaponType.Normal:
-                if (this.weapon.level === 1) {
-                    this.engine.addBullet(new Bullet(this.engine, cx - 4, cy, 0, -600));
-                } else if (this.weapon.level === 2) {
-                    this.engine.addBullet(new Bullet(this.engine, cx - 12, cy + 10, 0, -600));
-                    this.engine.addBullet(new Bullet(this.engine, cx + 4, cy + 10, 0, -600));
+                // Scales by bullet count (1/2/3), each bullet at design damage.
+                if (level === 1) {
+                    shoot(cx - 4, cy, 0, -600);
+                } else if (level === 2) {
+                    shoot(cx - 12, cy + 10, 0, -600);
+                    shoot(cx + 4, cy + 10, 0, -600);
                 } else {
-                    this.engine.addBullet(new Bullet(this.engine, cx - 16, cy + 16, 0, -600));
-                    this.engine.addBullet(new Bullet(this.engine, cx - 4, cy, 0, -600));
-                    this.engine.addBullet(new Bullet(this.engine, cx + 8, cy + 16, 0, -600));
+                    shoot(cx - 16, cy + 16, 0, -600);
+                    shoot(cx - 4, cy, 0, -600);
+                    shoot(cx + 8, cy + 16, 0, -600);
                 }
                 break;
-            case WeaponType.Laser:
-                const laserWidth = this.weapon.level * 8 + 8;
-                const bLaser = new Bullet(this.engine, cx - laserWidth / 2, cy - 40, 0, -1200);
-                bLaser.width = laserWidth;
-                bLaser.height = 64;
-                bLaser.pierces = true;
-                // Laser hits each enemy once, so give it a strong per-hit damage
-                // that scales with level (L1=3, L2=5, L3=7) to stay the top
-                // single-target / piercing weapon without frame-rate exploits.
-                bLaser.damage = 1 + this.weapon.level * 2;
-                bLaser.color = '#FFAAFF'; // used as identifier for pink image
-                this.engine.addBullet(bLaser);
+            case WeaponType.Laser: {
+                // Single piercing beam: scales by damage + hitbox width. Owns
+                // single-target DEPTH and vertical column clear.
+                const laserWidth = level * 8 + 8;
+                shoot(cx - laserWidth / 2, cy - 40, 0, -1200, (b) => {
+                    b.width = laserWidth;
+                    b.height = 64;
+                    b.pierces = true;
+                    b.color = '#FFAAFF'; // used as identifier for pink image
+                });
                 break;
-            case WeaponType.Wide:
+            }
+            case WeaponType.Wide: {
+                // Spread shot: scales by count/angle for horizontal BREADTH.
                 const sSpeed = 600;
-                this.engine.addBullet(new Bullet(this.engine, cx - 4, cy, 0, -sSpeed));
-                let spreadAngles = [];
-                if (this.weapon.level === 1) {
-                    spreadAngles = [-0.2, 0.2];
-                } else if (this.weapon.level === 2) {
-                    spreadAngles = [-0.3, -0.15, 0.15, 0.3];
-                } else {
-                    spreadAngles = [-0.4, -0.2, 0.2, 0.4];
-                }
-                for (let angle of spreadAngles) {
-                    this.engine.addBullet(new Bullet(this.engine, cx - 4, cy, angle * sSpeed, -sSpeed * Math.cos(angle)));
+                shoot(cx - 4, cy, 0, -sSpeed);
+                const spreadAngles = level === 1 ? [-0.2, 0.2]
+                    : level === 2 ? [-0.3, -0.15, 0.15, 0.3]
+                    : [-0.4, -0.2, 0.2, 0.4];
+                for (const angle of spreadAngles) {
+                    shoot(cx - 4, cy, angle * sSpeed, -sSpeed * Math.cos(angle));
                 }
                 break;
+            }
         }
     }
 
@@ -207,6 +213,7 @@ export class Player extends Entity {
             for (let i = 0; i < count; i++) {
                 const angle = (i - count / 2 + 0.5) * 0.4;
                 const hb = new HomingBullet(this.engine, cx - 6, cy + 20, Math.sin(angle) * 300, -300);
+                hb.damage = HOMING_DAMAGE; // auto-aim convenience bonus (scales by count)
                 this.engine.addBullet(hb);
             }
         }
